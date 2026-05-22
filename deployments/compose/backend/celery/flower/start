@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+echo "[Celery Flower] Waiting for Redis and Celery worker..."
+sleep 10
+
+echo "[Celery Flower] Starting Celery Flower monitoring..."
+exec celery -A core flower \
+    --port=5555 \
+    --broker="${CELERY_BROKER}" \
+    --broker_api="${CELERY_BROKER}" \
+    --basic_auth="${FLOWER_BASIC_AUTH:-admin:admin}"

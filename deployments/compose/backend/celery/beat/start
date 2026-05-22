@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+echo "[Celery Beat] Waiting for Redis to be ready..."
+sleep 5
+
+echo "[Celery Beat] Removing old celerybeat files if exists..."
+rm -f './celerybeat.pid'
+rm -f './celerybeat-schedule'
+
+echo "[Celery Beat] Starting Celery beat scheduler..."
+exec celery -A core beat \
+    --loglevel=info \
+    --scheduler django_celery_beat.schedulers:DatabaseScheduler

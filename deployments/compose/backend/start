@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -o errexit
+set -o pipefail
+set -o nounset
+
+echo "[Django] Applying database migrations..."
+python manage.py migrate --noinput
+
+echo "[Django] Collecting static files..."
+python manage.py collectstatic --noinput
+
+echo "[Django] Starting server..."
+
+# Production: Gunicorn with Uvicorn workers
+if [ "${DEBUG:-False}" = "False" ]; then
+    echo "[Django] Running in PRODUCTION mode with Gunicorn..."
+    exec gunicorn core.asgi:application \
+        --bind 0.0.0.0:8000 \
+        --workers ${GUNICORN_WORKERS:-4} \
+        --worker-class uvicorn.workers.UvicornWorker \
+        --timeout 120 \
+        --keep-alive 5 \
+        --max-requests 1000 \
+        --max-requests-jitter 50 \
+        --access-logfile - \
+        --error-logfile -
+else
+    echo "[Django] Running in DEVELOPMENT mode with Uvicorn..."
+    exec python -m uvicorn core.asgi:application \
+        --host 0.0.0.0 \
+        --port 8000 \
+        --reload
+fi

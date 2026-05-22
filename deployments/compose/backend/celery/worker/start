@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+echo "[Celery Worker] Waiting for Redis to be ready..."
+sleep 5
+
+echo "[Celery Worker] Starting Celery worker..."
+exec celery -A core worker \
+    --loglevel=info \
+    --concurrency=${CELERY_CONCURRENCY:-4} \
+    --max-tasks-per-child=1000 \
+    --time-limit=300 \
+    --soft-time-limit=240

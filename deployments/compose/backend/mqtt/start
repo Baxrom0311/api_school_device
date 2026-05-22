@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+echo "[MQTT Listener] Waiting for EMQX MQTT Broker to be ready..."
+
+# Readiness loop: wait until EMQX is accepting connections (max 60s)
+MAX_RETRIES=12
+RETRY_INTERVAL=5
+for i in $(seq 1 $MAX_RETRIES); do
+    if python -c "import socket; s=socket.socket(); s.settimeout(3); s.connect(('emqx', 1883)); s.close()" 2>/dev/null; then
+        echo "[MQTT Listener] EMQX is ready."
+        break
+    fi
+    if [ "$i" -eq "$MAX_RETRIES" ]; then
+        echo "[MQTT Listener] ERROR: EMQX not ready after $((MAX_RETRIES * RETRY_INTERVAL))s, starting anyway..."
+    fi
+    echo "[MQTT Listener] EMQX not ready, retrying in ${RETRY_INTERVAL}s... ($i/$MAX_RETRIES)"
+    sleep $RETRY_INTERVAL
+done
+
+echo "[MQTT Listener] Starting MQTT Listener Service..."
+exec python -m apps.devices.services.mqtt_listener

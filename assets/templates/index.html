@@ -1,0 +1,101 @@
+{% load static %}
+
+{% block body %}
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Django - The Web Framework for Perfectionists</title>
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+        <link rel="icon" href="{% static 'images/favicon.ico' %}" type="image/x-icon">
+    </head>
+    <body>
+    <div class="background">
+        <div class="grid-overlay"></div>
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div id="particles"></div>
+    </div>
+
+    <nav>
+        <div class="nav-container">
+            <div class="logo">DJANGO</div>
+            <ul class="nav-links">
+                <li><a href="{% url 'admin:index' %}">Admin</a></li>
+                <li><a href="{% url 'swagger-ui' %}">Swagger</a></li>
+                <li><a href="{% url 'redoc' %}">Redoc</a></li>
+                <li><a href="rosetta/">Rosetta</a></li>
+            </ul>
+        </div>
+    </nav>
+    <section class="hero" id="home">
+        <div class="hero-content">
+            <br>
+            <br>
+            <br>
+            <div class="hero-badge">THE WEB FRAMEWORK FOR PERFECTIONISTS</div>
+            <h1>
+                Build <span class="gradient-text">Powerful</span><br>
+                Web Applications
+            </h1>
+            <p class="hero-description">
+                Django makes it easier to build better web apps more quickly and with less code.
+                A high-level Python framework that encourages rapid development and clean, pragmatic design.
+            </p>
+            <div class="cta-buttons">
+                <a href="{% url 'admin:index' %}" class="btn btn-primary">Get Started</a>
+                <a href="https://github.com/JahongirHakimjonov/DjangoDefault" class="btn btn-secondary">View
+                    Documentation</a>
+            </div>
+
+            <div class="glass-card">
+                <div class="code-showcase">
+                    <div class="code-line"><span class="keyword">pip install django-default</span></div>
+                </div>
+
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <div class="feature-icon">⚡</div>
+                        <div class="feature-title">Blazing Fast</div>
+                        <div class="feature-desc">Optimized for performance and scalability</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🔒</div>
+                        <div class="feature-title">Secure by Default</div>
+                        <div class="feature-desc">Built-in protection against common vulnerabilities</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🎯</div>
+                        <div class="feature-title">Fully Featured</div>
+                        <div class="feature-desc">Everything you need out of the box</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="scroll-indicator"></div>
+        </div>
+    </section>
+    <footer class="footer">
+        <div class="social-links">
+            <a href="https://t.me/jakhangir_blog" target="_blank" class="social-icon">
+                <img src="{% static 'images/telegram-icon.svg' %}" alt="Telegram">
+            </a>
+            <a href="https://github.com/JahongirHakimjonov" target="_blank" class="social-icon">
+                <img src="{% static 'images/github-icon.svg' %}" alt="GitHub">
+            </a>
+            <a href="https://www.instagram.com/ja_khan_gir/" target="_blank" class="social-icon">
+                <img src="{% static 'images/instagram-icon.svg' %}" alt="Instagram">
+            </a>
+            <a href="https://dev.jakhangir.uz" target="_blank" class="social-icon">
+                <img src="{% static 'images/web-icon.svg' %}" alt="WebSite">
+            </a>
+        </div>
+        <p>© 2025 Django Default. All rights reserved.</p>
+        <p>Made with ❤️ by Jahongir Hakimjonov</p>
+    </footer>
+    <script src="{% static 'js/main.js' %}"></script>
+    </body>
+    </html>
+{% endblock %}

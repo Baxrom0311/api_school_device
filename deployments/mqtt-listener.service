@@ -1,0 +1,37 @@
+# systemd service file for MQTT Listener
+# Save as: /etc/systemd/system/mqtt-listener.service
+#
+# Usage:
+#   sudo systemctl enable mqtt-listener
+#   sudo systemctl start mqtt-listener
+#   sudo systemctl status mqtt-listener
+#   sudo journalctl -u mqtt-listener -f
+
+[Unit]
+Description=IoT MQTT Listener Service
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/iot-backend/src
+Environment="DJANGO_SETTINGS_MODULE=core.settings"
+EnvironmentFile=/var/www/iot-backend/.env
+ExecStart=/var/www/iot-backend/venv/bin/python apps/devices/services/mqtt_listener.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mqtt-listener
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/iot-backend
+
+[Install]
+WantedBy=multi-user.target
