@@ -24,7 +24,7 @@ class TestDuplicateMACAutoRegister:
 
     def test_invalid_mac_format_rejected(self, api_client):
         """Invalid MAC address format should be rejected."""
-        response = api_client.post("/api/v1/devices/auto-register/", {
+        response = api_client.post("/api/v1/device/auto-register/", {
             "device_id": "not-a-mac",
             "firmware_version": "1.0.0",
         })
@@ -34,11 +34,11 @@ class TestDuplicateMACAutoRegister:
         """First register creates device, second returns existing."""
         mac = "AA:BB:CC:DD:EE:11"
         normalized = "AABBCCDDEE11"
-        r1 = api_client.post("/api/v1/devices/auto-register/", {
+        r1 = api_client.post("/api/v1/device/auto-register/", {
             "device_id": mac,
             "firmware_version": "1.0.0",
         })
-        r2 = api_client.post("/api/v1/devices/auto-register/", {
+        r2 = api_client.post("/api/v1/device/auto-register/", {
             "device_id": mac,
             "firmware_version": "1.0.1",
         })
@@ -55,7 +55,7 @@ class TestDuplicateMACAutoRegister:
             firmware_version="1.0.0",
             registration_status=RegistrationStatus.PENDING,
         )
-        response = api_client.post("/api/v1/devices/auto-register/", {
+        response = api_client.post("/api/v1/device/auto-register/", {
             "device_id": "AA:BB:CC:DD:EE:12",
             "firmware_version": "1.1.0",
         })

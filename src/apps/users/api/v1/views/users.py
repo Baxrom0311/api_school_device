@@ -62,7 +62,7 @@ class AdminUserListView(APIView):
         
         # Role filter
         role = request.query_params.get('role', '').strip().upper()
-        if role in ['ADMIN', 'USER']:
+        if role in ['ADMIN', 'SCHOOL_ADMIN', 'USER']:
             queryset = queryset.filter(role=role)
         
         # Active status filter
@@ -237,6 +237,7 @@ class AdminUserStatsView(APIView):
         active = User.objects.filter(is_active=True).count()
         verified = User.objects.filter(is_verified=True).count()
         admins = User.objects.filter(role='ADMIN').count()
+        school_admins = User.objects.filter(role='SCHOOL_ADMIN').count()
         users = User.objects.filter(role='USER').count()
         with_devices = User.objects.annotate(dc=Count('devices')).filter(dc__gt=0).count()
         
@@ -247,6 +248,7 @@ class AdminUserStatsView(APIView):
             "verified": verified,
             "unverified": total - verified,
             "admins": admins,
+            "school_admins": school_admins,
             "users": users,
             "with_devices": with_devices,
             "without_devices": total - with_devices,

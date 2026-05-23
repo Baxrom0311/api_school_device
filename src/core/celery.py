@@ -12,8 +12,13 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.autodiscover_tasks()
 
-# Connect Prometheus monitoring signals
-import core.celery_monitoring  # noqa: F401, E402
+app.conf.result_expires = 3600  # Expire task results after 1 hour
+
+# Connect Prometheus monitoring signals (optional dependency)
+try:
+    import core.celery_monitoring  # noqa: F401, E402
+except ImportError:
+    pass
 
 # Celery Beat Schedule for IoT device monitoring
 app.conf.beat_schedule = {
@@ -39,5 +44,11 @@ app.conf.beat_schedule = {
         "task": "apps.devices.tasks.detect_stale_devices",
         "schedule": crontab(minute=0, hour="*/6"),
         "kwargs": {"threshold_hours": 24},
+    },
+    # Cleanup old device logs daily at 3 AM
+    "cleanup-device-logs": {
+        "task": "devices.cleanup_device_logs",
+        "schedule": crontab(hour=3, minute=0),
+        "kwargs": {"retention_days": 90},
     },
 }

@@ -52,8 +52,8 @@ class FirmwareVersion(AbstractBaseModel):
     checksum = models.CharField(
         max_length=64,
         blank=True,
-        verbose_name=_("MD5 Checksum"),
-        help_text=_("Auto-calculated MD5 hash for integrity verification"),
+        verbose_name=_("SHA-256 Checksum"),
+        help_text=_("Auto-calculated SHA-256 hash for integrity verification"),
     )
     
     file_size = models.PositiveIntegerField(
@@ -107,7 +107,7 @@ class FirmwareVersion(AbstractBaseModel):
             or (update_fields and "file" in update_fields)
         ):
             self.file.seek(0)
-            self.checksum = hashlib.md5(self.file.read()).hexdigest()
+            self.checksum = hashlib.sha256(self.file.read()).hexdigest()
             self.file_size = self.file.size
             self.file.seek(0)
         super().save(*args, **kwargs)

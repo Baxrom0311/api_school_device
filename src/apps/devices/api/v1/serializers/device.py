@@ -222,12 +222,16 @@ class DeviceCreateSerializer(serializers.ModelSerializer):
         ]
     
     def validate_device_id(self, value):
-        """Ensure device_id is unique and properly formatted"""
+        """Ensure device_id is unique and normalize MAC format."""
+        import re
+        normalized = re.sub(r'[:\-]', '', value.strip()).upper()
+        if re.fullmatch(r'[0-9A-F]{12}', normalized):
+            value = normalized
         if Device.objects.filter(device_id=value).exists():
             raise serializers.ValidationError(
                 _("Device with this ID already exists")
             )
-        return value.strip()
+        return value
     
 
 class DeviceBulkActionSerializer(serializers.Serializer):

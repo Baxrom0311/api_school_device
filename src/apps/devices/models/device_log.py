@@ -5,6 +5,7 @@ from apps.shared.models.base import AbstractBaseModel
 
 
 class LogLevel(models.TextChoices):
+    DEBUG = "debug", _("Debug")
     INFO = "info", _("Info")
     WARNING = "warning", _("Warning")
     ERROR = "error", _("Error")

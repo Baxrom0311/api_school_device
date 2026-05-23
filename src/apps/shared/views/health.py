@@ -87,6 +87,12 @@ class HealthCheckView(APIView):
         # MQTT publisher check
         try:
             checks["mqtt_publisher"] = "ok" if mqtt_publisher.is_connected() else "disconnected"
+            try:
+                cb_state = mqtt_publisher._circuit_breaker.state
+                if isinstance(cb_state, str):
+                    checks["mqtt_circuit_breaker"] = cb_state
+            except (AttributeError, TypeError):
+                pass
         except Exception:
             checks["mqtt_publisher"] = "unavailable"
 

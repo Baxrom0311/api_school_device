@@ -25,6 +25,11 @@ REST_FRAMEWORK = {
         "login": "5/min",
         "forgot_password": "3/hour",
         "reset_password": "5/min",
+        "device_register": "10/hour",
+        "device_ring": "30/min",
+        "device_ota": "10/hour",
+        "device_restart": "10/hour",
+        "bulk_command": "5/min",
     },
     "EXCEPTION_HANDLER": "apps.shared.exceptions.auth.custom_exception_handler",
 }

@@ -199,9 +199,9 @@ class MQTTListener:
             self._write_health()
             time.sleep(interval)
     
-    def _on_connect(self, client, userdata, flags, rc):
+    def _on_connect(self, client, userdata, flags, reason_code, properties):
         """Callback when connected to broker"""
-        if rc == 0:
+        if reason_code == 0:
             logger.info(f"Connected to MQTT broker at {self.config.BROKER_HOST}")
             
             # Subscribe to device topics
@@ -210,12 +210,12 @@ class MQTTListener:
             
             logger.info(f"Subscribed to: {self.config.OTA_STATUS_TOPIC}, {self.config.DEVICE_STATUS_TOPIC}")
         else:
-            logger.error(f"Connection failed with code: {rc}")
+            logger.error(f"Connection failed with code: {reason_code}")
     
-    def _on_disconnect(self, client, userdata, rc):
+    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         """Callback when disconnected"""
-        if rc != 0:
-            logger.warning(f"Unexpected disconnect: {rc}. Will attempt reconnect.")
+        if reason_code != 0:
+            logger.warning(f"Unexpected disconnect: {reason_code}. Will attempt reconnect.")
     
     def _on_message(self, client, userdata, msg):
         """Callback for incoming messages"""
@@ -240,9 +240,20 @@ class MQTTListener:
                 # Heartbeat — update last_seen; reactivate only if was inactive
                 now = timezone.now()
                 Device.objects.filter(device_id=device_id).update(last_seen=now)
-                Device.objects.filter(
+                reactivated = Device.objects.filter(
                     device_id=device_id, status="inactive"
                 ).update(status="active")
+                if reactivated:
+                    try:
+                        device = Device.objects.get(device_id=device_id)
+                        DeviceLog.objects.create(
+                            device=device,
+                            level=LogLevel.INFO,
+                            source=LogSource.MQTT,
+                            message="Device reconnected (was inactive)",
+                        )
+                    except Device.DoesNotExist:
+                        pass
                     
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON on {msg.topic}: {e}")
@@ -254,6 +265,7 @@ class MQTTListener:
         logger.info("Starting MQTT Listener Service...")
         
         self.client = mqtt.Client(
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=self.config.CLIENT_ID,
             protocol=mqtt.MQTTv311,
         )

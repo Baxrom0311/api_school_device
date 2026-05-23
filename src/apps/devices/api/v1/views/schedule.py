@@ -10,7 +10,6 @@ from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -23,7 +22,7 @@ from apps.devices.api.v1.serializers.schedule import (
     ScheduleBulkSyncSerializer,
 )
 from apps.devices.services import mqtt_publisher
-from apps.shared.permissions import IsSuperAdmin
+from apps.shared.permissions import IsSuperAdmin, IsSchoolAdmin
 
 
 @extend_schema_view(
@@ -43,7 +42,7 @@ class ScheduleViewSet(viewsets.ModelViewSet):
     - Use sync_to_device action to push changes to device
     """
     queryset = Schedule.objects.select_related("device").all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSchoolAdmin]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["is_active", "sync_pending"]
     search_fields = ["device__device_id", "device__school_name"]
@@ -60,10 +59,10 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         return ScheduleSerializer
     
     def get_permissions(self):
-        """Admin-only for bulk operations, authenticated for own schedules."""
+        """Admin-only for bulk operations, role-based for schedules."""
         if self.action in ["bulk_sync", "pending"]:
             return [IsSuperAdmin()]
-        return [IsAuthenticated()]
+        return [IsSchoolAdmin()]
     
     def get_queryset(self):
         """Non-admin users only see schedules for their own devices."""
@@ -91,7 +90,8 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         
         success = mqtt_publisher.send_schedule(
             schedule.device.device_id,
-            schedule.times
+            schedule.times,
+            version=schedule.version,
         )
         
         if success:
@@ -178,7 +178,7 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         
         return Response({
             "status": "completed",
-            "total": schedules.count(),
+            "total": results["success"] + results["failed"],
             **results,
         })
     

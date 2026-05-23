@@ -30,6 +30,7 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
     "login": "1000/min",
     "forgot_password": "1000/min",
     "reset_password": "1000/min",
+    "device_register": "1000/min",
 }
 
 # Disable email sending

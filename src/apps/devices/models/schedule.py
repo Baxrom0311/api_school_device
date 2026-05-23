@@ -50,6 +50,11 @@ class Schedule(AbstractBaseModel):
     )
     
     # Sync tracking
+    version = models.PositiveIntegerField(
+        default=1,
+        verbose_name=_("Version"),
+        help_text=_("Auto-incremented on each schedule change. ESP32 compares to detect updates."),
+    )
     synced_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -72,11 +77,12 @@ class Schedule(AbstractBaseModel):
         return f"Schedule for {self.device.device_id} ({times_count} times)"
     
     def save(self, *args, **kwargs):
-        # Mark as needing sync whenever times change
+        # Mark as needing sync and bump version whenever times change
         if self.pk:
             old = Schedule.objects.filter(pk=self.pk).values("times").first()
             if old and old["times"] != self.times:
                 self.sync_pending = True
+                self.version = (self.version or 0) + 1
         super().save(*args, **kwargs)
     
     @property

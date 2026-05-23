@@ -38,7 +38,7 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     
     # MQTT for IoT device communication
-    "paho-mqtt>=2.0.0",
+    "paho-mqtt>=2.0.0,<3.0.0",
     
     # Server
     "gunicorn>=21.2.0",
@@ -128,8 +128,9 @@ exclude = ["src/core/settings.py"]
 django_settings_module = "core.settings"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["src/tests"]
 DJANGO_SETTINGS_MODULE = "tests.settings"
+pythonpath = ["src"]
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning",

@@ -23,6 +23,18 @@ def admin_user(db):
 
 
 @pytest.fixture
+def school_admin_user(db):
+    user = User.objects.create_user(
+        email="schooladmin@test.com",
+        password="testpass123",
+        username="schooladmin",
+        role="SCHOOL_ADMIN",
+        is_verified=True,
+    )
+    return user
+
+
+@pytest.fixture
 def regular_user(db):
     user = User.objects.create_user(
         email="user@test.com",
@@ -50,6 +62,13 @@ def unverified_user(db):
 def admin_client(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     return api_client
+
+
+@pytest.fixture
+def school_admin_client(admin_user, school_admin_user):
+    client = APIClient()
+    client.force_authenticate(user=school_admin_user)
+    return client
 
 
 @pytest.fixture

@@ -1,3 +1,4 @@
+import hmac
 import secrets
 from datetime import timedelta
 
@@ -41,12 +42,12 @@ class ForgotPasswordView(APIView):
             # Don't reveal whether email exists
             return Response({"detail": "Agar email mavjud bo'lsa, tiklash havolasi yuborildi."})
 
-        # Generate reset token (reuse verification_token field)
-        user.verification_token = secrets.token_urlsafe(32)
-        user.verification_token_expires = timezone.now() + timedelta(hours=1)
-        user.save(update_fields=["verification_token", "verification_token_expires"])
+        # Generate dedicated password reset token
+        user.password_reset_token = secrets.token_urlsafe(32)
+        user.password_reset_token_expires = timezone.now() + timedelta(hours=1)
+        user.save(update_fields=["password_reset_token", "password_reset_token_expires"])
 
-        send_password_reset_email(user.email, user.verification_token)
+        send_password_reset_email(user.email, user.password_reset_token)
 
         return Response({"detail": "Agar email mavjud bo'lsa, tiklash havolasi yuborildi."})
 
@@ -87,10 +88,10 @@ class ResetPasswordView(APIView):
         except User.DoesNotExist:
             return Response({"detail": "Token yaroqsiz yoki muddati tugagan."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not user.verification_token or user.verification_token != token:
+        if not user.password_reset_token or not hmac.compare_digest(user.password_reset_token, token):
             return Response({"detail": "Token yaroqsiz yoki muddati tugagan."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if user.verification_token_expires and user.verification_token_expires < timezone.now():
+        if user.password_reset_token_expires and user.password_reset_token_expires < timezone.now():
             return Response({"detail": "Token muddati tugagan."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate password against Django validators
@@ -103,8 +104,8 @@ class ResetPasswordView(APIView):
             )
 
         user.set_password(new_password)
-        user.verification_token = None
-        user.verification_token_expires = None
-        user.save(update_fields=["password", "verification_token", "verification_token_expires"])
+        user.password_reset_token = None
+        user.password_reset_token_expires = None
+        user.save(update_fields=["password", "password_reset_token", "password_reset_token_expires"])
 
         return Response({"detail": "Parol muvaffaqiyatli yangilandi."})

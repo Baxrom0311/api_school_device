@@ -8,11 +8,13 @@ WHY this design:
 4. QoS 0 for ring commands (fire-and-forget, real-time)
 5. Automatic reconnection handling
 6. Structured command helpers for type safety
+7. Circuit breaker prevents hammering a down broker
 """
 import json
 import os
 import logging
 import threading
+import time
 from typing import Any, Optional
 from dataclasses import dataclass
 
@@ -25,6 +27,61 @@ try:
     from apps.shared.middlewares.prometheus import MQTT_PUBLISH_TOTAL
 except Exception:
     MQTT_PUBLISH_TOTAL = None
+
+
+# ============ Circuit Breaker ============
+
+class CircuitBreakerOpen(Exception):
+    """Raised when circuit breaker is open and calls are rejected."""
+    pass
+
+
+class CircuitBreaker:
+    """
+    Simple circuit breaker to avoid hammering a down MQTT broker.
+
+    States: CLOSED (normal) -> OPEN (failing) -> HALF_OPEN (testing recovery)
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0):
+        self._state = self.CLOSED
+        self._failure_count = 0
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._last_failure_time: float = 0
+        self._lock = threading.Lock()
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            if self._state == self.OPEN:
+                if time.monotonic() - self._last_failure_time >= self._recovery_timeout:
+                    self._state = self.HALF_OPEN
+            return self._state
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._failure_count = 0
+            self._state = self.CLOSED
+
+    def record_failure(self) -> None:
+        with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = time.monotonic()
+            if self._failure_count >= self._failure_threshold:
+                self._state = self.OPEN
+                logger.warning(
+                    f"Circuit breaker OPEN after {self._failure_count} failures. "
+                    f"Will retry in {self._recovery_timeout}s."
+                )
+
+    def allow_request(self) -> bool:
+        state = self.state
+        return state in (self.CLOSED, self.HALF_OPEN)
 
 
 @dataclass
@@ -84,6 +141,10 @@ class MQTTPublisher:
         self._client: Optional[mqtt.Client] = None
         self._connected = False
         self._connect_lock = threading.Lock()
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=int(os.getenv("MQTT_CB_FAILURE_THRESHOLD", "5")),
+            recovery_timeout=float(os.getenv("MQTT_CB_RECOVERY_TIMEOUT", "60")),
+        )
         self._initialized = True
         
     def _get_client(self) -> mqtt.Client:
@@ -97,6 +158,7 @@ class MQTTPublisher:
         """Establish connection to MQTT broker"""
         try:
             self._client = mqtt.Client(
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                 client_id=self.config.client_id,
                 protocol=mqtt.MQTTv311,
             )
@@ -135,20 +197,20 @@ class MQTTPublisher:
             self._connected = False
             raise
     
-    def _on_connect(self, client, userdata, flags, rc):
+    def _on_connect(self, client, userdata, flags, reason_code, properties):
         """Callback when connected to broker"""
-        if rc == 0:
+        if reason_code == 0:
             self._connected = True
             logger.info("MQTT Publisher connected successfully")
         else:
             self._connected = False
-            logger.error(f"MQTT connection failed with code: {rc}")
+            logger.error(f"MQTT connection failed with code: {reason_code}")
     
-    def _on_disconnect(self, client, userdata, rc):
+    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         """Callback when disconnected from broker"""
         self._connected = False
-        if rc != 0:
-            logger.warning(f"MQTT unexpected disconnect: {rc}")
+        if reason_code != 0:
+            logger.warning(f"MQTT unexpected disconnect: {reason_code}")
 
     def is_connected(self) -> bool:
         """Check if MQTT client is currently connected"""
@@ -172,7 +234,15 @@ class MQTTPublisher:
             
         Returns:
             True if published successfully
+            
+        Raises nothing - returns False on failure (circuit breaker included).
         """
+        if not self._circuit_breaker.allow_request():
+            logger.warning(f"Circuit breaker OPEN, dropping publish to {topic}")
+            if MQTT_PUBLISH_TOTAL:
+                MQTT_PUBLISH_TOTAL.labels(result="circuit_open").inc()
+            return False
+
         try:
             client = self._get_client()
             message = json.dumps(payload)
@@ -181,17 +251,20 @@ class MQTTPublisher:
             
             if result.rc == mqtt.MQTT_ERR_SUCCESS:
                 logger.debug(f"Published to {topic}: {message}")
+                self._circuit_breaker.record_success()
                 if MQTT_PUBLISH_TOTAL:
                     MQTT_PUBLISH_TOTAL.labels(result="success").inc()
                 return True
             else:
                 logger.error(f"Publish failed to {topic}: rc={result.rc}")
+                self._circuit_breaker.record_failure()
                 if MQTT_PUBLISH_TOTAL:
                     MQTT_PUBLISH_TOTAL.labels(result="failure").inc()
                 return False
                 
         except Exception as e:
             logger.error(f"Publish error: {e}")
+            self._circuit_breaker.record_failure()
             if MQTT_PUBLISH_TOTAL:
                 MQTT_PUBLISH_TOTAL.labels(result="failure").inc()
             return False
@@ -212,12 +285,12 @@ class MQTTPublisher:
     
     # ============ Command Helpers ============
     
-    def send_schedule(self, device_id: str, times: list[str]) -> bool:
+    def send_schedule(self, device_id: str, times: list[str], version: int = 0) -> bool:
         """
         Push schedule to device via schedule topic.
         
         Converts times list ["08:30", "09:15"] to ESP32 format:
-        {"entries": [{"hour": 8, "minute": 30, "duration": 3000, "days": 127}, ...]}
+        {"version": 3, "entries": [{"hour": 8, "minute": 30, "duration": 3000, "days": 127}, ...]}
         
         QoS 1: Ensure delivery - schedules are critical
         """
@@ -233,7 +306,7 @@ class MQTTPublisher:
                 })
         
         topic = f"devices/{device_id}/schedule"
-        payload = {"entries": entries}
+        payload = {"version": version, "entries": entries}
         success = self.publish(topic, payload, qos=1)
         
         if success:
@@ -313,7 +386,8 @@ class MQTTPublisher:
     def broadcast_schedule(
         self,
         device_ids: list[str],
-        times: list[str]
+        times: list[str],
+        version: int = 0,
     ) -> dict[str, bool]:
         """
         Send same schedule to multiple devices.
@@ -322,7 +396,7 @@ class MQTTPublisher:
         """
         results = {}
         for device_id in device_ids:
-            results[device_id] = self.send_schedule(device_id, times)
+            results[device_id] = self.send_schedule(device_id, times, version=version)
         return results
     
     def disconnect(self) -> None:

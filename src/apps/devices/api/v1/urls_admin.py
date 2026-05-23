@@ -2,8 +2,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
+from apps.devices.api.v1.views.admin_device import AdminDeviceViewSet
 from apps.devices.api.v1.views import (
-    DeviceViewSet,
     ScheduleViewSet,
     FirmwareVersionViewSet,
     OTABatchViewSet,
@@ -12,7 +12,7 @@ from apps.devices.api.v1.views import (
 from apps.devices.api.v1.views.mqtt_auth import MQTTAuthView, MQTTACLView
 
 router = DefaultRouter()
-router.register("devices", DeviceViewSet, basename="admin-device")
+router.register("devices", AdminDeviceViewSet, basename="admin-device")
 router.register("schedules", ScheduleViewSet, basename="admin-schedule")
 router.register("firmware", FirmwareVersionViewSet, basename="admin-firmware")
 router.register("ota-batches", OTABatchViewSet, basename="admin-ota-batch")

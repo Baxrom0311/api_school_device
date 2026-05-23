@@ -83,7 +83,8 @@ class ScheduleAdmin(ModelAdmin):
         for schedule in queryset.filter(is_active=True):
             if mqtt_publisher.send_schedule(
                 schedule.device.device_id,
-                schedule.times
+                schedule.times,
+                version=schedule.version,
             ):
                 schedule.sync_pending = False
                 schedule.synced_at = timezone.now()

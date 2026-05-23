@@ -8,7 +8,7 @@ from apps.devices.models.device import RegistrationStatus
 @pytest.mark.django_db
 class TestDeviceAutoRegister:
     def test_auto_register_new_device(self, api_client):
-        response = api_client.post("/api/v1/devices/auto-register/", {
+        response = api_client.post("/api/v1/device/auto-register/", {
             "device_id": "AA:BB:CC:DD:EE:01",
             "firmware_version": "1.0.0",
         })
@@ -23,7 +23,7 @@ class TestDeviceAutoRegister:
             device_id="AABBCCDDEE02",
             registration_status=RegistrationStatus.PENDING,
         )
-        response = api_client.post("/api/v1/devices/auto-register/", {
+        response = api_client.post("/api/v1/device/auto-register/", {
             "device_id": "AA:BB:CC:DD:EE:02",
             "firmware_version": "1.1.0",
         })
@@ -36,7 +36,7 @@ class TestDeviceAutoRegister:
             device_id="AABBCCDDEE03",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        response = api_client.post("/api/v1/devices/auto-register/", {
+        response = api_client.post("/api/v1/device/auto-register/", {
             "device_id": "AA:BB:CC:DD:EE:03",
             "firmware_version": "1.0.0",
         })
@@ -49,27 +49,28 @@ class TestDeviceAutoRegister:
 class TestDeviceActivate:
     def test_activate_valid_key(self, api_client, db):
         device = Device.objects.create(
-            device_id="AC:TI:VA:TE:00:01",
+            device_id="ACTIVATE0001",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        response = api_client.post("/api/v1/devices/activate/", {
+        response = api_client.post("/api/v1/device/activate/", {
             "api_key": device.api_key,
         })
         assert response.status_code == 200
-        assert "mqtt_username" in response.data
+        assert "credentials" in response.data
+        assert "mqtt_username" in response.data["credentials"]
 
     def test_activate_invalid_key(self, api_client):
-        response = api_client.post("/api/v1/devices/activate/", {
+        response = api_client.post("/api/v1/device/activate/", {
             "api_key": "sk_invalid_key_here",
         })
         assert response.status_code == 401
 
     def test_activate_unregistered_device(self, api_client, db):
         device = Device.objects.create(
-            device_id="UN:RE:GI:ST:00:01",
+            device_id="UNREGIST0001",
             registration_status=RegistrationStatus.PENDING,
         )
-        response = api_client.post("/api/v1/devices/activate/", {
+        response = api_client.post("/api/v1/device/activate/", {
             "api_key": device.api_key,
         })
         assert response.status_code == 403
@@ -120,8 +121,12 @@ class TestDevicePermissions:
         assert response.status_code == 200
         assert response.data["count"] == 2
 
-    def test_user_sees_only_own_devices(self, user_client, device, user_device):
+    def test_user_cannot_list_devices_via_admin_endpoint(self, user_client, device, user_device):
         response = user_client.get("/api/v1/devices/")
+        assert response.status_code == 403
+
+    def test_user_sees_only_own_devices_via_my_devices(self, user_client, device, user_device):
+        response = user_client.get("/api/v1/devices/my_devices/")
         assert response.status_code == 200
         assert response.data["count"] == 1
         assert response.data["results"][0]["device_id"] == "11:22:33:44:55:66"
@@ -260,3 +265,116 @@ class TestBulkOperationsAsync:
         assert response.status_code == 202
         assert response.data["status"] == "accepted"
         mock_delay.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestDeviceCreateNormalization:
+    """Test that admin device creation normalizes MAC addresses."""
+
+    def test_create_normalizes_mac(self, admin_client):
+        response = admin_client.post("/api/v1/devices/", {
+            "device_id": "AA:BB:CC:DD:EE:99",
+        })
+        assert response.status_code == 201
+        assert Device.objects.filter(device_id="AABBCCDDEE99").exists()
+
+    def test_create_rejects_duplicate_normalized(self, admin_client, db):
+        Device.objects.create(device_id="AABBCCDDEE88")
+        response = admin_client.post("/api/v1/devices/", {
+            "device_id": "AA:BB:CC:DD:EE:88",
+        })
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestDeviceCredentialsEndpoint:
+    """Tests for /api/v1/device/credentials/ (ESP32-facing)."""
+
+    def test_credentials_valid_key(self, api_client, db):
+        device = Device.objects.create(
+            device_id="CREDENTIAL01",
+            registration_status=RegistrationStatus.REGISTERED,
+        )
+        response = api_client.post("/api/v1/device/credentials/", {
+            "api_key": device.api_key,
+        })
+        assert response.status_code == 200
+        assert "credentials" in response.data
+        assert "mqtt_username" in response.data["credentials"]
+        # Credentials already set on create, so returns existing info
+        assert "message" in response.data
+
+    def test_credentials_first_time(self, api_client, db):
+        """Device without mqtt_password gets credentials generated."""
+        device = Device.objects.create(
+            device_id="CREDFIRST001",
+            registration_status=RegistrationStatus.REGISTERED,
+        )
+        # Clear the auto-generated password to simulate first-time
+        Device.objects.filter(pk=device.pk).update(mqtt_password="")
+        response = api_client.post("/api/v1/device/credentials/", {
+            "api_key": device.api_key,
+        })
+        assert response.status_code == 200
+        assert "credentials" in response.data
+        assert len(response.data["credentials"]["mqtt_password"]) > 10
+
+    def test_credentials_unregistered_device(self, api_client, db):
+        device = Device.objects.create(
+            device_id="CREDUNREG001",
+            registration_status=RegistrationStatus.PENDING,
+        )
+        response = api_client.post("/api/v1/device/credentials/", {
+            "api_key": device.api_key,
+        })
+        assert response.status_code == 403
+
+    def test_credentials_not_regenerated_on_second_call(self, api_client, db):
+        """Credentials endpoint must NOT regenerate password if already set."""
+        device = Device.objects.create(
+            device_id="CREDNORGN001",
+            registration_status=RegistrationStatus.REGISTERED,
+        )
+        # First call — device already has mqtt_password from create
+        resp1 = api_client.post("/api/v1/device/credentials/", {
+            "api_key": device.api_key,
+        })
+        assert resp1.status_code == 200
+        assert "message" in resp1.data
+
+        # Second call — should return same info, not regenerate
+        resp2 = api_client.post("/api/v1/device/credentials/", {
+            "api_key": device.api_key,
+        })
+        assert resp2.status_code == 200
+        assert resp2.data["credentials"]["mqtt_username"] == resp1.data["credentials"]["mqtt_username"]
+        # Password is masked on repeat calls
+        assert resp2.data["credentials"]["mqtt_password"] == "***"
+
+    def test_credentials_missing_key(self, api_client):
+        response = api_client.post("/api/v1/device/credentials/", {})
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestDeviceStatusPoll:
+    def test_admin_can_poll_status(self, admin_client, device):
+        response = admin_client.get("/api/v1/devices/status-poll/")
+        assert response.status_code == 200
+        assert isinstance(response.data, list)
+        assert len(response.data) >= 1
+        # Verify minimal fields are present
+        entry = response.data[0]
+        assert "id" in entry
+        assert "device_id" in entry
+        assert "status" in entry
+        assert "last_seen" in entry
+        assert "rtc_synced" in entry
+
+    def test_regular_user_cannot_poll_status(self, user_client):
+        response = user_client.get("/api/v1/devices/status-poll/")
+        assert response.status_code == 403
+
+    def test_unauthenticated_cannot_poll_status(self, api_client):
+        response = api_client.get("/api/v1/devices/status-poll/")
+        assert response.status_code == 401

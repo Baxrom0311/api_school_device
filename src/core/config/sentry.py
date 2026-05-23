@@ -6,6 +6,8 @@ import os
 if os.getenv("SENTRY_ENABLED", "false").lower() == "true":
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.redis import RedisIntegration
 
     _raw_traces_rate = os.getenv("SENTRY_TRACES_SAMPLE_RATE")
     try:
@@ -15,7 +17,11 @@ if os.getenv("SENTRY_ENABLED", "false").lower() == "true":
 
     sentry_sdk.init(
         dsn=os.getenv("SENTRY_DSN"),
-        integrations=[DjangoIntegration()],
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(monitor_beat_tasks=True),
+            RedisIntegration(),
+        ],
         traces_sample_rate=traces_sample_rate,
         profile_session_sample_rate=traces_sample_rate,
         profile_lifecycle="trace",

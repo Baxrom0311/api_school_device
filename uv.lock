@@ -676,7 +676,7 @@ requires-dist = [
     { name = "flower", specifier = ">=2.0.1" },
     { name = "gunicorn", specifier = ">=21.2.0" },
     { name = "hiredis", specifier = ">=3.0.0" },
-    { name = "paho-mqtt", specifier = ">=2.0.0" },
+    { name = "paho-mqtt", specifier = ">=2.0.0,<3.0.0" },
     { name = "pillow", specifier = ">=10.2.0" },
     { name = "prometheus-client", specifier = ">=0.22.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.9" },

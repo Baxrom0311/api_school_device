@@ -268,7 +268,7 @@ class TestSyncPendingSchedules:
 
         assert result["synced"] == 1
         assert result["failed"] == 0
-        mock_send.assert_called_once_with(schedule_device.device_id, ["08:00", "12:00"])
+        mock_send.assert_called_once_with(schedule_device.device_id, ["08:00", "12:00"], version=sched.version)
 
     @patch.object(MQTTPublisher, "send_schedule", return_value=False)
     def test_mqtt_failure_counted(self, mock_send, schedule_device):
@@ -306,9 +306,9 @@ class TestDetectStaleDevices:
         device.status = "active"
         device.registration_status = "registered"
         device.save(update_fields=["status", "registration_status"])
-        # Bypass auto_now to set old updated_at
+        # Set last_seen to 48 hours ago to simulate stale device
         Device.objects.filter(pk=device.pk).update(
-            updated_at=timezone.now() - timedelta(hours=48)
+            last_seen=timezone.now() - timedelta(hours=48)
         )
 
         result = detect_stale_devices(threshold_hours=24)
@@ -320,12 +320,31 @@ class TestDetectStaleDevices:
     def test_recent_devices_not_affected(self, device):
         device.status = "active"
         device.registration_status = "registered"
-        device.save(update_fields=["status", "registration_status"])
+        device.last_seen = timezone.now()
+        device.save(update_fields=["status", "registration_status", "last_seen"])
 
         result = detect_stale_devices(threshold_hours=24)
 
         device.refresh_from_db()
         assert device.status == "active"
+
+    def test_never_connected_device_marked_stale(self, db):
+        """Device with last_seen=None and old created_at should be marked inactive."""
+        device = Device.objects.create(
+            device_id="ST:AL:E0:NU:LL:01",
+            status="active",
+            registration_status="registered",
+            last_seen=None,
+        )
+        Device.objects.filter(pk=device.pk).update(
+            created_at=timezone.now() - timedelta(hours=48)
+        )
+
+        result = detect_stale_devices(threshold_hours=24)
+
+        device.refresh_from_db()
+        assert device.status == "inactive"
+        assert result["marked_inactive"] >= 1
 
 
 @pytest.mark.django_db
@@ -344,3 +363,111 @@ class TestGenerateDailyReport:
         assert "registered_devices" in result
         assert "firmware_distribution" in result
         assert result["total_devices"] >= 1
+
+
+@pytest.mark.django_db
+class TestCleanupDeviceLogs:
+    """Test cleanup_device_logs task."""
+
+    def test_deletes_old_logs(self, device):
+        from apps.devices.models.device_log import DeviceLog, LogLevel, LogSource
+        from apps.devices.tasks import cleanup_device_logs
+
+        # Create old log (100 days ago)
+        old_log = DeviceLog.objects.create(
+            device=device,
+            level=LogLevel.INFO,
+            source=LogSource.DEVICE,
+            message="Old log",
+        )
+        DeviceLog.objects.filter(pk=old_log.pk).update(
+            created_at=timezone.now() - timedelta(days=100)
+        )
+
+        # Create recent log
+        DeviceLog.objects.create(
+            device=device,
+            level=LogLevel.INFO,
+            source=LogSource.DEVICE,
+            message="Recent log",
+        )
+
+        result = cleanup_device_logs(retention_days=90)
+
+        assert result["deleted"] == 1
+        assert DeviceLog.objects.count() == 1
+        assert DeviceLog.objects.first().message == "Recent log"
+
+    def test_no_old_logs(self, device):
+        from apps.devices.models.device_log import DeviceLog, LogLevel, LogSource
+        from apps.devices.tasks import cleanup_device_logs
+
+        DeviceLog.objects.create(
+            device=device,
+            level=LogLevel.INFO,
+            source=LogSource.DEVICE,
+            message="Fresh log",
+        )
+
+        result = cleanup_device_logs(retention_days=90)
+        assert result["deleted"] == 0
+        assert DeviceLog.objects.count() == 1
+
+
+@pytest.mark.django_db
+class TestCircuitBreaker:
+    """Test MQTT publisher circuit breaker."""
+
+    def test_circuit_opens_after_threshold_failures(self):
+        from apps.devices.services.mqtt_publisher import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+
+        assert cb.allow_request() is True
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.allow_request() is True  # Still closed (2 < 3)
+        cb.record_failure()
+        assert cb.allow_request() is False  # Now open
+
+    def test_circuit_resets_on_success(self):
+        from apps.devices.services.mqtt_publisher import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_success()  # Reset
+        cb.record_failure()
+        assert cb.allow_request() is True  # Only 1 failure after reset
+
+    def test_circuit_half_open_after_timeout(self):
+        import time
+        from apps.devices.services.mqtt_publisher import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
+
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.allow_request() is False  # Open
+
+        time.sleep(0.15)
+        assert cb.allow_request() is True  # Half-open after timeout
+
+    @patch.object(MQTTPublisher, "_get_client")
+    def test_publish_rejected_when_circuit_open(self, mock_client, device):
+        from apps.devices.services.mqtt_publisher import mqtt_publisher
+
+        # Force circuit open
+        mqtt_publisher._circuit_breaker._failure_count = 100
+        mqtt_publisher._circuit_breaker._state = "open"
+        mqtt_publisher._circuit_breaker._last_failure_time = __import__("time").monotonic()
+
+        result = mqtt_publisher.publish("test/topic", {"cmd": "ring"})
+
+        assert result is False
+        mock_client.assert_not_called()
+
+        # Reset for other tests
+        mqtt_publisher._circuit_breaker._state = "closed"
+        mqtt_publisher._circuit_breaker._failure_count = 0

@@ -168,7 +168,11 @@ class Device(AbstractBaseModel):
         verbose_name_plural = _("Devices")
         ordering = ["-created_at"]
         db_table = "devices"
-        indexes = []
+        indexes = [
+            models.Index(fields=["registration_status", "-created_at"], name="idx_device_regstatus_created"),
+            models.Index(fields=["owner", "-created_at"], name="idx_device_owner_created"),
+            models.Index(fields=["status", "registration_status"], name="idx_device_status_regstatus"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.device_id} - {self.school_name}"
@@ -198,6 +202,7 @@ class Device(AbstractBaseModel):
         """Regenerate MQTT credentials and return new raw password"""
         import secrets
         from django.contrib.auth.hashers import make_password
+        from django.core.cache import cache
         
         # Ensure username exists
         if not self.mqtt_username:
@@ -207,6 +212,11 @@ class Device(AbstractBaseModel):
         raw = secrets.token_urlsafe(24)
         self.mqtt_password = make_password(raw)
         self.save(update_fields=['mqtt_username', 'mqtt_password'])
+        
+        # Invalidate cached auth/ACL entries so stale credentials are rejected
+        cache.delete(f"mqtt_auth:{self.mqtt_username}")
+        cache.delete(f"mqtt_acl:{self.mqtt_username}")
+        
         return raw
     
     def regenerate_api_key(self) -> str:

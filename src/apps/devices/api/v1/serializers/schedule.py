@@ -33,6 +33,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
             "times_count",
             "is_active",
             "timezone",
+            "version",
             "synced_at",
             "sync_pending",
             "created_at",
@@ -40,6 +41,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "version",
             "synced_at",
             "sync_pending",
             "created_at",
@@ -126,7 +128,7 @@ class ScheduleCreateSerializer(serializers.ModelSerializer):
     def validate_device(self, value):
         """Check device doesn't already have a schedule and user owns it"""
         request = self.context.get("request")
-        if request and getattr(request.user, "role", None) != "ADMIN":
+        if request and getattr(request.user, "role", None) not in ("ADMIN", "SCHOOL_ADMIN"):
             if value.owner != request.user:
                 raise serializers.ValidationError(
                     _("You can only create schedules for your own devices")

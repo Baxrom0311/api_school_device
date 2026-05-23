@@ -11,6 +11,7 @@ from apps.users.managers.users import UserManager
 
 class RoleChoices(models.TextChoices):
     ADMIN = "ADMIN", _("Admin")
+    SCHOOL_ADMIN = "SCHOOL_ADMIN", _("School Admin")
     USER = "USER", _("User")
 
 
@@ -64,6 +65,19 @@ class User(AbstractUser, AbstractBaseModel):
         blank=True,
         verbose_name=_("Token Expires"),
         help_text=_("When the verification token expires"),
+    )
+    password_reset_token = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name=_("Password Reset Token"),
+        help_text=_("Token for password reset"),
+    )
+    password_reset_token_expires = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Reset Token Expires"),
+        help_text=_("When the password reset token expires"),
     )
 
     USERNAME_FIELD = "email"

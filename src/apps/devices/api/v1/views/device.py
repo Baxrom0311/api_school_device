@@ -7,13 +7,14 @@ WHY this design:
 3. Filtering/search for 10K+ device management
 4. Stats endpoint for dashboard
 """
+from django.db import transaction
 from django.db.models import Count
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -31,7 +32,6 @@ from apps.devices.api.v1.serializers.device import (
     DeviceBulkOTASerializer,
     DeviceCredentialsSerializer,
     DeviceAPIKeySerializer,
-    DeviceAutoRegisterSerializer,
     DeviceApproveSerializer,
     DeviceClaimSerializer,
     DeviceClaimResponseSerializer,
@@ -59,12 +59,30 @@ class DeviceViewSet(viewsets.ModelViewSet):
     - Custom actions: ring, restart, stats
     """
     queryset = Device.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSuperAdmin]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["status", "firmware_version", "rtc_synced", "registration_status"]
     search_fields = ["device_id", "school_name", "address"]
     ordering_fields = ["created_at", "school_name", "device_id"]
     ordering = ["-created_at"]
+
+    # Per-action throttle scopes for ScopedRateThrottle
+    ACTION_THROTTLE_SCOPES = {
+        "ring": "device_ring",
+        "restart": "device_restart",
+        "ntp_sync": "device_restart",
+        "ota_update": "device_ota",
+        "bulk_ring": "bulk_command",
+        "bulk_restart": "bulk_command",
+        "bulk_ota": "bulk_command",
+    }
+
+    def initial(self, request, *args, **kwargs):
+        """Set throttle_scope dynamically based on action for ScopedRateThrottle."""
+        scope = self.ACTION_THROTTLE_SCOPES.get(self.action)
+        if scope:
+            self.throttle_scope = scope
+        super().initial(request, *args, **kwargs)
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -84,8 +102,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return DeviceCredentialsSerializer
         elif self.action in ["api_key", "regenerate_api_key", "register", "unregister"]:
             return DeviceAPIKeySerializer
-        elif self.action == "auto_register":
-            return DeviceAutoRegisterSerializer
         elif self.action == "approve":
             return DeviceApproveSerializer
         elif self.action == "claim":
@@ -94,22 +110,25 @@ class DeviceViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         """Apply role-based permissions per action."""
-        # No auth required - ESP32 device endpoints
-        if self.action in ["auto_register", "activate_with_api_key"]:
-            return [AllowAny()]
-        # Member actions - any authenticated user
-        if self.action in ["my_devices", "claim"]:
+        # Member actions - any authenticated user (ownership enforced in get_queryset)
+        if self.action in ["my_devices", "claim", "retrieve"]:
             return [IsAuthenticated()]
-        # Admin-only actions
+        # Admin-only actions (list requires admin - members use my_devices)
         if self.action in [
+            "list",
             "create", "update", "partial_update", "destroy",
             "bulk_ota", "bulk_ring", "bulk_restart", "stats", "approve",
             "pending", "unregistered", "register", "unregister",
             "credentials", "regenerate_credentials",
             "credentials_by_device_id",
             "api_key", "regenerate_api_key",
+            "status_poll",
+            "ota_update", "ntp_sync",
         ]:
             return [IsSuperAdmin()]
+        # Device owner actions (ring, restart) - authenticated + ownership check
+        if self.action in ["ring", "restart"]:
+            return [IsAuthenticated()]
         # Default: authenticated
         return [IsAuthenticated()]
     
@@ -120,11 +139,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
         # Non-admin users only see their own devices for ALL actions
         if (
             self.request.user.is_authenticated
-            and getattr(self.request.user, "role", None) != "ADMIN"
+            and getattr(self.request.user, "role", None) not in ("ADMIN", "SUPERADMIN")
         ):
             queryset = queryset.filter(owner=self.request.user)
         
-        if self.action == "list":
+        if self.action in ["list", "pending", "unregistered", "my_devices"]:
             queryset = queryset.select_related("schedule")
         elif self.action == "retrieve":
             queryset = queryset.select_related("schedule", "target_firmware")
@@ -422,13 +441,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
         
         GET /api/v1/devices/stats/
         """
+        from django.db.models import Q, Sum, Case, When, IntegerField
+        
         queryset = self.get_queryset()
         
-        # Aggregations
-        total = queryset.count()
-        registered = queryset.filter(registration_status='registered').count()
-        pending = queryset.filter(registration_status='pending').count()
-        rtc_errors = queryset.filter(rtc_synced=False).count()
+        # Single query with conditional aggregation
+        agg = queryset.aggregate(
+            total_devices=Count("id"),
+            registered_devices=Count("id", filter=Q(registration_status="registered")),
+            pending_devices=Count("id", filter=Q(registration_status="pending")),
+            rtc_errors=Count("id", filter=Q(rtc_synced=False)),
+        )
         
         # Firmware distribution
         firmware_counts = (
@@ -443,10 +466,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         }
         
         data = {
-            "total_devices": total,
-            "registered_devices": registered,
-            "pending_devices": pending,
-            "rtc_errors": rtc_errors,
+            **agg,
             "firmware_versions": firmware_versions,
         }
         
@@ -519,6 +539,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
         # Use model method to regenerate password (returns raw password)
         raw_password = device.regenerate_mqtt_password()
         device._raw_mqtt_password = raw_password
+
+        # Invalidate MQTT auth/ACL cache so old credentials stop working immediately
+        if device.mqtt_username:
+            cache.delete(f"mqtt_auth:{device.mqtt_username}")
+            cache.delete(f"mqtt_acl:{device.mqtt_username}")
         
         # Log the credential regeneration
         from apps.devices.models import DeviceLog
@@ -655,22 +680,23 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
-        device.register_device()
-        
-        # Log registration
-        from apps.devices.models import DeviceLog
-        from apps.devices.models.device_log import LogLevel, LogSource
-        
-        DeviceLog.objects.create(
-            device=device,
-            level=LogLevel.INFO,
-            source=LogSource.SERVER,
-            message="Device registered",
-            metadata={
-                "registered_by": request.user.username if request.user else "system",
-                "ip_address": request.META.get('REMOTE_ADDR'),
-            },
-        )
+        with transaction.atomic():
+            device.register_device()
+            
+            # Log registration
+            from apps.devices.models import DeviceLog
+            from apps.devices.models.device_log import LogLevel, LogSource
+            
+            DeviceLog.objects.create(
+                device=device,
+                level=LogLevel.INFO,
+                source=LogSource.SERVER,
+                message="Device registered",
+                metadata={
+                    "registered_by": request.user.username if request.user else "system",
+                    "ip_address": request.META.get('REMOTE_ADDR'),
+                },
+            )
         
         serializer = self.get_serializer(device)
         return Response(serializer.data)
@@ -698,22 +724,23 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
-        device.unregister_device()
-        
-        # Log unregistration
-        from apps.devices.models import DeviceLog
-        from apps.devices.models.device_log import LogLevel, LogSource
-        
-        DeviceLog.objects.create(
-            device=device,
-            level=LogLevel.INFO,
-            source=LogSource.SERVER,
-            message="Device unregistered",
-            metadata={
-                "unregistered_by": request.user.username if request.user else "system",
-                "ip_address": request.META.get('REMOTE_ADDR'),
-            },
-        )
+        with transaction.atomic():
+            device.unregister_device()
+            
+            # Log unregistration
+            from apps.devices.models import DeviceLog
+            from apps.devices.models.device_log import LogLevel, LogSource
+            
+            DeviceLog.objects.create(
+                device=device,
+                level=LogLevel.INFO,
+                source=LogSource.SERVER,
+                message="Device unregistered",
+                metadata={
+                    "unregistered_by": request.user.username if request.user else "system",
+                    "ip_address": request.META.get('REMOTE_ADDR'),
+                },
+            )
         
         serializer = self.get_serializer(device)
         return Response(serializer.data)
@@ -744,129 +771,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
         serializer = DeviceListSerializer(queryset, many=True)
         return Response(serializer.data)
     
-    @extend_schema(
-        summary="Activate device with API key",
-        tags=["Devices", "Provisioning"],
-        responses={200: DeviceCredentialsSerializer},
-    )
-    @action(detail=False, methods=["post"], url_path="activate", permission_classes=[AllowAny], throttle_classes=[AnonRateThrottle])
-    def activate_with_api_key(self, request):
-        """
-        Activate a device using its API key.
-        
-        This endpoint is used by the ESP32 firmware to:
-        1. Verify the API key is valid
-        2. Get MQTT credentials
-        3. Mark device as online
-        
-        POST /api/v1/devices/activate/
-        Body: {"api_key": "sk_xxxxx"}
-        
-        Returns full credentials if API key is valid.
-        """
-        api_key = request.data.get("api_key")
-        
-        if not api_key:
-            return Response(
-                {"detail": "api_key is required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        
-        try:
-            device = Device.objects.get(api_key=api_key)
-        except Device.DoesNotExist:
-            return Response(
-                {"detail": "Invalid API key"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-        
-        # Check if device is registered
-        if device.registration_status != RegistrationStatus.REGISTERED:
-            return Response(
-                {
-                    "detail": "Device is not registered. Please contact administrator.",
-                    "registration_status": device.registration_status,
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        
-        # Always regenerate MQTT password on activation (ESP32 may have lost NVS)
-        raw_password = device.regenerate_mqtt_password()
-        device._raw_mqtt_password = raw_password
-        
-        serializer = DeviceCredentialsSerializer(device)
-        return Response(serializer.data)
-
-    # ============== Auto-Registration Endpoints (No Auth Required) ==============
-    
-    @extend_schema(
-        summary="Auto-register device (ESP32 calls this)",
-        tags=["Devices", "Auto-Registration"],
-        request=DeviceAutoRegisterSerializer,
-        responses={200: {"description": "Registration status and credentials if approved"}},
-    )
-    @action(detail=False, methods=["post"], permission_classes=[AllowAny], throttle_classes=[AnonRateThrottle], url_path="auto-register")
-    def auto_register(self, request):
-        """
-        Auto-register a device using its MAC address.
-        
-        This endpoint is called by ESP32 when it first boots.
-        No authentication required - device identifies itself by MAC.
-        
-        POST /api/v1/devices/auto-register/
-        Body: {"device_id": "AA:BB:CC:DD:EE:FF", "firmware_version": "1.0.0"}
-        
-        Flow:
-        1. If device exists and REGISTERED -> return MQTT credentials
-        2. If device exists and PENDING -> return "waiting for approval"
-        3. If device doesn't exist -> create with PENDING status
-        
-        ESP32 should call this periodically until it gets credentials.
-        """
-        serializer = DeviceAutoRegisterSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        device_id = serializer.validated_data["device_id"]
-        firmware_version = serializer.validated_data.get("firmware_version", "0.0.0")
-        
-        device, created = Device.objects.get_or_create(
-            device_id=device_id,
-            defaults={
-                "firmware_version": firmware_version,
-                "registration_status": RegistrationStatus.PENDING,
-            },
-        )
-        
-        if created:
-            return Response({
-                "status": "pending",
-                "message": "Yangi qurilma ro'yxatga olindi. Administrator tasdiqlashini kuting.",
-                "device_id": device_id,
-                "registration_status": "pending",
-                "credentials": None,
-            }, status=status.HTTP_201_CREATED)
-        
-        # Device already exists — update firmware version only if changed
-        if device.firmware_version != firmware_version:
-            device.firmware_version = firmware_version
-            device.save(update_fields=["firmware_version"])
-        
-        if device.registration_status == RegistrationStatus.REGISTERED:
-            return Response({
-                "status": "already_registered",
-                "device_id": device_id,
-                "credentials": None,
-                "message": "Use /device/activate/ with API key to get credentials.",
-            })
-        else:
-            # Still pending
-            return Response({
-                "status": "pending",
-                "message": "Qurilma tasdiqlash kutilmoqda. Administrator bilan bog'laning.",
-                "device_id": device_id,
-                "registration_status": device.registration_status,
-                "credentials": None,
-            })
+    # NOTE: auto_register and activate_with_api_key removed — use dedicated views
+    # at /api/v1/device/auto-register/ and /api/v1/device/activate/ instead.
     
     @extend_schema(
         summary="Approve pending device",
@@ -895,28 +801,29 @@ class DeviceViewSet(viewsets.ModelViewSet):
         serializer = DeviceApproveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Update device with school info
-        device.school_name = serializer.validated_data["school_name"]
-        device.address = serializer.validated_data.get("address", "")
-        device.description = serializer.validated_data.get("description", "")
-        device.registration_status = RegistrationStatus.REGISTERED
-        device.registered_at = timezone.now()
-        device.save()
-        
-        # Log approval
-        from apps.devices.models import DeviceLog
-        from apps.devices.models.device_log import LogLevel, LogSource
-        
-        DeviceLog.objects.create(
-            device=device,
-            level=LogLevel.INFO,
-            source=LogSource.SERVER,
-            message=f"Device approved and assigned to {device.school_name}",
-            metadata={
-                "approved_by": request.user.username if request.user else "system",
-                "ip_address": request.META.get('REMOTE_ADDR'),
-            },
-        )
+        with transaction.atomic():
+            # Update device with school info
+            device.school_name = serializer.validated_data["school_name"]
+            device.address = serializer.validated_data.get("address", "")
+            device.description = serializer.validated_data.get("description", "")
+            device.registration_status = RegistrationStatus.REGISTERED
+            device.registered_at = timezone.now()
+            device.save()
+            
+            # Log approval
+            from apps.devices.models import DeviceLog
+            from apps.devices.models.device_log import LogLevel, LogSource
+            
+            DeviceLog.objects.create(
+                device=device,
+                level=LogLevel.INFO,
+                source=LogSource.SERVER,
+                message=f"Device approved and assigned to {device.school_name}",
+                metadata={
+                    "approved_by": request.user.username if request.user else "system",
+                    "ip_address": request.META.get('REMOTE_ADDR'),
+                },
+            )
         
         return Response({
             "status": "success",
@@ -1011,3 +918,24 @@ class DeviceViewSet(viewsets.ModelViewSet):
         
         serializer = DeviceListSerializer(queryset, many=True)
         return Response(serializer.data)
+
+    @extend_schema(
+        summary="Lightweight device status polling",
+        tags=["Devices"],
+        responses={200: {"description": "Minimal device status data for real-time updates"}},
+    )
+    @action(detail=False, methods=["get"], url_path="status-poll")
+    def status_poll(self, request):
+        """
+        Lightweight polling endpoint for real-time device status.
+
+        Returns minimal fields (id, device_id, status, last_seen, rtc_synced)
+        to avoid full serialization overhead on frequent polling.
+
+        GET /api/v1/devices/status-poll/
+        """
+        devices = self.get_queryset().values(
+            "id", "device_id", "status", "last_seen", "rtc_synced",
+            "registration_status", "firmware_version",
+        )
+        return Response(list(devices))

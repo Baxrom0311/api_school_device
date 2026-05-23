@@ -111,7 +111,7 @@ class TestForgotPassword:
         assert response.status_code == 200
 
         regular_user.refresh_from_db()
-        assert regular_user.verification_token is not None
+        assert regular_user.password_reset_token is not None
 
     def test_forgot_password_nonexistent_email(self, api_client):
         response = api_client.post("/api/v1/auth/forgot-password/", {
@@ -124,7 +124,7 @@ class TestForgotPassword:
         # First request reset
         api_client.post("/api/v1/auth/forgot-password/", {"email": "user@test.com"})
         regular_user.refresh_from_db()
-        token = regular_user.verification_token
+        token = regular_user.password_reset_token
 
         response = api_client.post("/api/v1/auth/reset-password/", {
             "email": "user@test.com",
@@ -158,6 +158,29 @@ class TestMe:
 
     def test_me_unauthenticated(self, api_client):
         response = api_client.get("/api/v1/auth/me/")
+        assert response.status_code == 401
+
+    def test_update_profile(self, user_client, regular_user):
+        response = user_client.patch("/api/v1/auth/me/", {
+            "first_name": "Updated",
+            "last_name": "Name",
+        })
+        assert response.status_code == 200
+        assert response.data["first_name"] == "Updated"
+        assert response.data["last_name"] == "Name"
+        regular_user.refresh_from_db()
+        assert regular_user.first_name == "Updated"
+
+    def test_update_profile_cannot_change_role(self, user_client, regular_user):
+        response = user_client.patch("/api/v1/auth/me/", {
+            "role": "ADMIN",
+        })
+        # Role should not change even if sent
+        regular_user.refresh_from_db()
+        assert regular_user.role == "USER"
+
+    def test_update_profile_unauthenticated(self, api_client):
+        response = api_client.patch("/api/v1/auth/me/", {"first_name": "Hacker"})
         assert response.status_code == 401
 
 

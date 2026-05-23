@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
     autoretry_for=(OperationalError, ConnectionError),
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
 )
 def send_bulk_ring(self, device_ids: list[int]) -> dict:
     """
@@ -62,6 +64,8 @@ def send_bulk_ring(self, device_ids: list[int]) -> dict:
     autoretry_for=(OperationalError, ConnectionError),
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
 )
 def send_bulk_restart(self, device_ids: list[int]) -> dict:
     """
@@ -96,6 +100,8 @@ def send_bulk_restart(self, device_ids: list[int]) -> dict:
     autoretry_for=(OperationalError, ConnectionError),
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=300,
+    time_limit=360,
 )
 def process_ota_batch(self, batch_id: int) -> dict:
     """
@@ -233,6 +239,8 @@ def process_ota_batch(self, batch_id: int) -> dict:
     max_retries=3,
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
 )
 def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: int = 30) -> dict:
     """
@@ -308,6 +316,8 @@ def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: 
     max_retries=3,
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
 )
 def sync_pending_schedules(self, max_devices: int = 100) -> dict:
     """
@@ -336,7 +346,8 @@ def sync_pending_schedules(self, max_devices: int = 100) -> dict:
         try:
             if mqtt_publisher.send_schedule(
                 schedule.device.device_id,
-                schedule.times
+                schedule.times,
+                version=schedule.version,
             ):
                 schedule.sync_pending = False
                 schedule.synced_at = timezone.now()
@@ -360,6 +371,8 @@ def sync_pending_schedules(self, max_devices: int = 100) -> dict:
     max_retries=3,
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=60,
+    time_limit=90,
 )
 def generate_daily_report(self) -> dict:
     """
@@ -420,6 +433,8 @@ def generate_daily_report(self) -> dict:
     max_retries=3,
     retry_backoff=True,
     acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
 )
 def detect_stale_devices(self, threshold_hours: int = 24) -> dict:
     """
@@ -431,13 +446,15 @@ def detect_stale_devices(self, threshold_hours: int = 24) -> dict:
     - Runs periodically via Celery beat
     """
     from apps.devices.models import Device
+    from django.db.models import Q
 
     threshold = timezone.now() - timedelta(hours=threshold_hours)
 
     stale = Device.objects.filter(
         status="active",
         registration_status="registered",
-        updated_at__lt=threshold,
+    ).filter(
+        Q(last_seen__lt=threshold) | Q(last_seen__isnull=True, created_at__lt=threshold)
     )
 
     count = stale.update(status="inactive")
@@ -459,3 +476,44 @@ def detect_stale_devices(self, threshold_hours: int = 24) -> dict:
         pass
 
     return {"marked_inactive": count}
+
+
+@shared_task(
+    bind=True,
+    name="devices.cleanup_device_logs",
+    max_retries=3,
+    autoretry_for=(OperationalError,),
+    retry_backoff=True,
+    acks_late=True,
+    soft_time_limit=600,
+    time_limit=660,
+)
+def cleanup_device_logs(self, retention_days: int = 90, chunk_size: int = 2000):
+    """
+    Delete DeviceLog entries older than retention_days in chunks.
+
+    WHY chunked: A single bulk delete of millions of rows can lock the table,
+    spike memory, and block other queries. Deleting in small batches keeps
+    transactions short and the database responsive.
+
+    Run periodically (e.g., daily) via Celery Beat.
+    """
+    from apps.devices.models import DeviceLog
+
+    cutoff = timezone.now() - timedelta(days=retention_days)
+    total_deleted = 0
+
+    while True:
+        # Get PKs for a chunk to avoid long-running DELETE with subquery
+        ids = list(
+            DeviceLog.objects.filter(created_at__lt=cutoff)
+            .values_list("id", flat=True)[:chunk_size]
+        )
+        if not ids:
+            break
+        deleted, _ = DeviceLog.objects.filter(id__in=ids).delete()
+        total_deleted += deleted
+
+    if total_deleted:
+        logger.info(f"Cleaned up {total_deleted} device logs older than {retention_days} days")
+    return {"deleted": total_deleted}

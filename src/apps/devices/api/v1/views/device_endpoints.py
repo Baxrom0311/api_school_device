@@ -1,8 +1,11 @@
 """Device endpoints - called by ESP32 firmware (API key auth, no user auth)."""
+import re
+
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.devices.models import Device
@@ -13,10 +16,32 @@ from apps.devices.api.v1.serializers.device import (
 )
 
 
+def _credentials_response(device):
+    """Build nested credentials response matching ESP32 expected format."""
+    raw_password = device.regenerate_mqtt_password()
+    device._raw_mqtt_password = raw_password
+    if device.mqtt_username:
+        cache.delete(f"mqtt_auth:{device.mqtt_username}")
+        cache.delete(f"mqtt_acl:{device.mqtt_username}")
+    return Response({
+        "device_id": device.device_id,
+        "credentials": {
+            "mqtt_username": device.mqtt_username,
+            "mqtt_password": raw_password,
+        },
+    })
+
+
+def _normalize_mac(mac_str):
+    """Remove colons/dashes and uppercase."""
+    return re.sub(r"[:\-]", "", mac_str).upper()
+
+
 class DeviceAutoRegisterView(APIView):
     """POST /api/v1/device/auto-register/ — ESP32 self-registration."""
     permission_classes = [AllowAny]
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "device_register"
 
     def post(self, request):
         serializer = DeviceAutoRegisterSerializer(data=request.data)
@@ -50,8 +75,9 @@ class DeviceAutoRegisterView(APIView):
             return Response({
                 "status": "already_registered",
                 "device_id": device_id,
+                "api_key": device.api_key,
                 "credentials": None,
-                "message": "Use /device/activate/ with API key to get credentials.",
+                "message": "Use /device/activate/ with device_id to get credentials.",
             })
 
         return Response({
@@ -63,25 +89,42 @@ class DeviceAutoRegisterView(APIView):
 
 
 class DeviceActivateView(APIView):
-    """POST /api/v1/device/activate/ — activate device with API key."""
+    """POST /api/v1/device/activate/ — activate device by MAC or API key.
+
+    Accepts either:
+      {"device_id": "AA:BB:CC:DD:EE:FF"}  (ESP32 MAC-based activation)
+      {"api_key": "sk_..."}                (admin/legacy activation)
+    """
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):
+        device_id = request.data.get("device_id")
         api_key = request.data.get("api_key")
-        if not api_key:
+
+        if not device_id and not api_key:
             return Response(
-                {"detail": "api_key is required"},
+                {"detail": "device_id or api_key is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            device = Device.objects.get(api_key=api_key)
-        except Device.DoesNotExist:
-            return Response(
-                {"detail": "Invalid API key"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+        if device_id:
+            normalized = _normalize_mac(device_id)
+            try:
+                device = Device.objects.get(device_id=normalized)
+            except Device.DoesNotExist:
+                return Response(
+                    {"detail": "Device not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        else:
+            try:
+                device = Device.objects.get(api_key=api_key)
+            except Device.DoesNotExist:
+                return Response(
+                    {"detail": "Invalid API key"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
 
         if device.registration_status != RegistrationStatus.REGISTERED:
             return Response(
@@ -89,13 +132,15 @@ class DeviceActivateView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        raw_password = device.regenerate_mqtt_password()
-        device._raw_mqtt_password = raw_password
-        return Response(DeviceCredentialsSerializer(device).data)
+        return _credentials_response(device)
 
 
 class DeviceCredentialsView(APIView):
-    """POST /api/v1/device/credentials/ — get MQTT credentials (api_key in body)."""
+    """POST /api/v1/device/credentials/ — get MQTT credentials (api_key in body).
+
+    Returns existing credentials if already set. Only first activation generates password.
+    Use DeviceActivateView to regenerate credentials.
+    """
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
 
@@ -121,4 +166,14 @@ class DeviceCredentialsView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        return Response(DeviceCredentialsSerializer(device).data)
+        if device.mqtt_password:
+            return Response({
+                "device_id": device.device_id,
+                "credentials": {
+                    "mqtt_username": device.mqtt_username,
+                    "mqtt_password": "***",
+                },
+                "message": "Credentials already set. Use /device/activate/ to regenerate.",
+            })
+
+        return _credentials_response(device)

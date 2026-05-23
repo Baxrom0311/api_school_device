@@ -28,8 +28,8 @@ class TestForgotPassword:
     def test_forgot_password_generates_token(self, api_client, regular_user):
         api_client.post("/api/v1/auth/forgot-password/", {"email": "user@test.com"})
         regular_user.refresh_from_db()
-        assert regular_user.verification_token is not None
-        assert regular_user.verification_token_expires is not None
+        assert regular_user.password_reset_token is not None
+        assert regular_user.password_reset_token_expires is not None
 
 
 @pytest.mark.django_db
@@ -38,7 +38,7 @@ class TestResetPassword:
         # Request reset
         api_client.post("/api/v1/auth/forgot-password/", {"email": "user@test.com"})
         regular_user.refresh_from_db()
-        token = regular_user.verification_token
+        token = regular_user.password_reset_token
 
         # Reset with valid token
         response = api_client.post("/api/v1/auth/reset-password/", {
@@ -66,7 +66,7 @@ class TestResetPassword:
     def test_reset_password_short_password(self, api_client, regular_user):
         api_client.post("/api/v1/auth/forgot-password/", {"email": "user@test.com"})
         regular_user.refresh_from_db()
-        token = regular_user.verification_token
+        token = regular_user.password_reset_token
 
         response = api_client.post("/api/v1/auth/reset-password/", {
             "email": "user@test.com",
@@ -82,7 +82,7 @@ class TestResetPassword:
     def test_reset_password_clears_token(self, api_client, regular_user):
         api_client.post("/api/v1/auth/forgot-password/", {"email": "user@test.com"})
         regular_user.refresh_from_db()
-        token = regular_user.verification_token
+        token = regular_user.password_reset_token
 
         api_client.post("/api/v1/auth/reset-password/", {
             "email": "user@test.com",
@@ -91,7 +91,7 @@ class TestResetPassword:
         })
 
         regular_user.refresh_from_db()
-        assert regular_user.verification_token is None
+        assert regular_user.password_reset_token is None
 
         # Token can't be reused
         response = api_client.post("/api/v1/auth/reset-password/", {
@@ -100,6 +100,26 @@ class TestResetPassword:
             "new_password": "anotherpass",
         })
         assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestResetPasswordExpiredToken:
+    def test_expired_token_rejected(self, api_client, regular_user):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Set an expired token directly
+        regular_user.password_reset_token = "expired-token-123"
+        regular_user.password_reset_token_expires = timezone.now() - timedelta(hours=1)
+        regular_user.save(update_fields=["password_reset_token", "password_reset_token_expires"])
+
+        response = api_client.post("/api/v1/auth/reset-password/", {
+            "email": "user@test.com",
+            "token": "expired-token-123",
+            "new_password": "newpass123",
+        })
+        assert response.status_code == 400
+        assert "muddati tugagan" in response.data["detail"]
 
 
 @pytest.mark.django_db

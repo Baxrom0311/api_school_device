@@ -171,7 +171,8 @@ class DeviceAdmin(ModelAdmin):
             if hasattr(device, "schedule") and device.schedule.is_active:
                 if mqtt_publisher.send_schedule(
                     device.device_id,
-                    device.schedule.times
+                    device.schedule.times,
+                    version=device.schedule.version,
                 ):
                     device.schedule.sync_pending = False
                     device.schedule.synced_at = timezone.now()
