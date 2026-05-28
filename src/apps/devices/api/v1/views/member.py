@@ -181,9 +181,9 @@ class MemberDeviceRingView(APIView):
         except (TypeError, ValueError):
             duration = 5
 
-        success = mqtt_publisher.ring(device.device_id, duration)
-        if success:
-            return Response({"status": "success", "duration": duration})
+        msg_id = mqtt_publisher.ring(device.device_id, duration)
+        if msg_id:
+            return Response({"status": "success", "duration": duration, "msg_id": msg_id})
         return Response({"status": "error", "message": "Failed to send ring command"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
@@ -210,3 +210,46 @@ class MemberDeviceEmergencyView(APIView):
         }
         mqtt_publisher.send_to_device(device.device_id, command_map[alert_type], qos=1)
         return Response({"status": "success", "alert_type": alert_type})
+
+
+class CommandStatusView(APIView):
+    """GET /api/v1/member/commands/<msg_id>/status/ — get command delivery status."""
+    permission_classes = [IsMember]
+
+    def get(self, request, msg_id=None):
+        from apps.devices.models.command_log import CommandLog
+        try:
+            cmd = CommandLog.objects.get(msg_id=msg_id, device__owner=request.user)
+        except CommandLog.DoesNotExist:
+            return Response({"detail": "Command not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "msg_id": str(cmd.msg_id),
+            "status": cmd.status,
+            "command_type": cmd.command_type,
+            "sent_at": cmd.sent_at,
+            "acked_at": cmd.acked_at,
+            "error_message": cmd.error_message,
+        })
+
+
+class RecentCommandsView(APIView):
+    """GET /api/v1/member/commands/recent/ — last 10 commands for user's devices."""
+    permission_classes = [IsMember]
+
+    def get(self, request):
+        from apps.devices.models.command_log import CommandLog
+        cmds = CommandLog.objects.filter(
+            device__owner=request.user
+        ).order_by("-sent_at")[:10]
+        data = [
+            {
+                "msg_id": str(c.msg_id),
+                "device_id": c.device.device_id,
+                "command_type": c.command_type,
+                "status": c.status,
+                "sent_at": c.sent_at,
+                "acked_at": c.acked_at,
+            }
+            for c in cmds.select_related("device")
+        ]
+        return Response(data)

@@ -85,6 +85,7 @@ class ScheduleAdmin(ModelAdmin):
                 schedule.device.device_id,
                 schedule.times,
                 version=schedule.version,
+                days_mask=schedule.days_mask,
             ):
                 schedule.sync_pending = False
                 schedule.synced_at = timezone.now()

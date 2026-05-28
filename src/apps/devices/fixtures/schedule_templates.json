@@ -1,0 +1,29 @@
+[
+  {
+    "model": "devices.scheduletemplate",
+    "fields": {
+      "name": "Standart maktab (8:00-14:00)",
+      "description": "Oddiy maktab jadvali: 6 ta dars, har 45 daqiqa",
+      "times": ["08:00", "08:45", "09:00", "09:45", "10:00", "10:45", "11:00", "11:45", "12:00", "12:45", "13:00", "13:45"],
+      "is_default": true
+    }
+  },
+  {
+    "model": "devices.scheduletemplate",
+    "fields": {
+      "name": "Universitet",
+      "description": "Universitet jadvali: 4 ta para, har 80 daqiqa",
+      "times": ["08:30", "09:50", "10:00", "11:20", "11:30", "12:50", "14:00", "15:20"],
+      "is_default": false
+    }
+  },
+  {
+    "model": "devices.scheduletemplate",
+    "fields": {
+      "name": "Maxsus (qisqa kun)",
+      "description": "Qisqartirilgan jadval: 4 ta dars",
+      "times": ["08:00", "08:35", "08:45", "09:20", "09:30", "10:05", "10:15", "10:50"],
+      "is_default": false
+    }
+  }
+]

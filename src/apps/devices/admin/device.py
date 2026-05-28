@@ -173,6 +173,7 @@ class DeviceAdmin(ModelAdmin):
                     device.device_id,
                     device.schedule.times,
                     version=device.schedule.version,
+                    days_mask=device.schedule.days_mask,
                 ):
                     device.schedule.sync_pending = False
                     device.schedule.synced_at = timezone.now()

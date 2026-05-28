@@ -86,3 +86,115 @@ class TestDeviceStatus:
         assert "mqtt_password" not in entry
         assert "api_key" not in entry
         assert "mqtt_username" not in entry
+
+
+@pytest.mark.django_db
+class TestMyBellLogs:
+    url = "/api/v1/member/bell-logs/"
+
+    def test_returns_user_bell_logs(self, user_client, member_device):
+        from apps.devices.models.bell_log import BellLog
+        from django.utils import timezone
+
+        BellLog.objects.create(
+            device=member_device, rang_at=timezone.now(), duration_ms=3000, trigger_source="schedule"
+        )
+
+        resp = user_client.get(self.url)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["count"] == 1
+
+    def test_does_not_return_other_users_bell_logs(self, user_client, admin_user, db):
+        from apps.devices.models.bell_log import BellLog
+        from django.utils import timezone
+
+        other_device = Device.objects.create(
+            device_id="OT:HE:RB:EL:L0:01", owner=admin_user
+        )
+        BellLog.objects.create(
+            device=other_device, rang_at=timezone.now(), duration_ms=3000, trigger_source="manual"
+        )
+
+        resp = user_client.get(self.url)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["count"] == 0
+
+    def test_excludes_logs_older_than_30_days(self, user_client, member_device):
+        from apps.devices.models.bell_log import BellLog
+        from django.utils import timezone
+        from datetime import timedelta
+
+        now = timezone.now()
+        BellLog.objects.create(
+            device=member_device, rang_at=now - timedelta(days=31), duration_ms=3000, trigger_source="schedule"
+        )
+        BellLog.objects.create(
+            device=member_device, rang_at=now - timedelta(days=5), duration_ms=3000, trigger_source="manual"
+        )
+
+        resp = user_client.get(self.url)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["count"] == 1
+
+    def test_unauthenticated_rejected(self, api_client):
+        resp = api_client.get(self.url)
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+class TestMyHolidays:
+    url = "/api/v1/member/holidays/"
+
+    def test_returns_holidays(self, user_client):
+        from apps.devices.models.holiday import Holiday
+        from datetime import date
+
+        Holiday.objects.create(name="Navro'z", date=date(2026, 3, 21), recurring=True)
+
+        resp = user_client.get(self.url)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["count"] == 1
+        assert resp.data["results"][0]["name"] == "Navro'z"
+
+    def test_unauthenticated_rejected(self, api_client):
+        resp = api_client.get(self.url)
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+class TestHolidayRanges:
+    url = "/api/v1/member/holiday-ranges/"
+
+    def test_create_range(self, user_client):
+        resp = user_client.post(self.url, {
+            "name": "Yozgi tatil",
+            "from_month": 6, "from_day": 1,
+            "to_month": 8, "to_day": 31,
+        }, format="json")
+        assert resp.status_code == status.HTTP_201_CREATED
+        assert resp.data["name"] == "Yozgi tatil"
+        assert resp.data["from_month"] == 6
+        assert resp.data["to_month"] == 8
+
+    def test_list_ranges(self, user_client):
+        from apps.devices.models.holiday_range import HolidayRange
+        HolidayRange.objects.create(name="Qishki tatil", from_month=12, from_day=25, to_month=1, to_day=5)
+
+        resp = user_client.get(self.url)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["count"] == 1
+
+    def test_delete_range(self, user_client):
+        from apps.devices.models.holiday_range import HolidayRange
+        r = HolidayRange.objects.create(name="Test", from_month=1, from_day=1, to_month=1, to_day=10)
+
+        resp = user_client.delete(f"{self.url}{r.id}/")
+        assert resp.status_code == status.HTTP_204_NO_CONTENT
+        assert HolidayRange.objects.count() == 0
+
+    def test_validation_invalid_month(self, user_client):
+        resp = user_client.post(self.url, {
+            "name": "Bad", "from_month": 13, "from_day": 1,
+            "to_month": 1, "to_day": 1,
+        }, format="json")
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST

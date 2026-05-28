@@ -155,12 +155,64 @@ class Device(AbstractBaseModel):
         help_text=_("When the device was registered/claimed"),
     )
 
+    # RTC Battery Health (updated by MQTT listener on rtc_drift alerts)
+    class RTCBatteryStatus(models.TextChoices):
+        OK = "ok", _("OK")
+        LOW = "low", _("Low")
+        DEAD = "dead", _("Dead")
+
+    rtc_battery_status = models.CharField(
+        max_length=10,
+        choices=RTCBatteryStatus.choices,
+        default=RTCBatteryStatus.OK,
+        verbose_name=_("RTC Battery Status"),
+    )
+    rtc_drift_sec = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last RTC Drift (seconds)"),
+    )
+    rtc_consecutive_drift_days = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_("Consecutive RTC Drift Days"),
+        help_text=_("Days in a row with drift > 5 min. 3+ = battery dead."),
+    )
+
+    # WiFi mode (updated from heartbeat)
+    class WifiMode(models.TextChoices):
+        STA = "sta", _("STA (Client)")
+        AP = "ap", _("AP (Access Point)")
+        AP_STA = "ap_sta", _("AP+STA")
+        DISCONNECTED = "disconnected", _("Disconnected")
+
+    wifi_mode = models.CharField(
+        max_length=15,
+        choices=WifiMode.choices,
+        default=WifiMode.STA,
+        verbose_name=_("WiFi Mode"),
+    )
+
     # Connectivity tracking
     last_seen = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name=_("Last Seen"),
         help_text=_("Last heartbeat received from device"),
+    )
+    rssi = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("RSSI (dBm)"),
+    )
+    uptime_sec = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Uptime (seconds)"),
+    )
+    free_heap = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Free Heap (bytes)"),
     )
     
     class Meta:

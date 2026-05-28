@@ -58,11 +58,13 @@ def ota_batch(admin_user, firmware):
 def schedule_device(db, admin_user):
     """A separate device for schedule tests (no pre-existing schedule)."""
     import uuid
+    from django.utils import timezone
     return Device.objects.create(
         device_id=f"SCHED_{uuid.uuid4().hex[:8].upper()}",
         school_name="Schedule School",
         firmware_version="1.0.0",
         owner=admin_user,
+        last_seen=timezone.now(),
     )
 
 

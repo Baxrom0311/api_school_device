@@ -81,6 +81,9 @@ class MQTTListenerConfig:
     # Topics to subscribe
     OTA_STATUS_TOPIC = "devices/+/ota/status"  # + is single-level wildcard
     DEVICE_STATUS_TOPIC = "devices/+/status"  # heartbeat/online/offline
+    DEVICE_ALERT_TOPIC = "devices/+/alert"  # panic button alerts
+    BELL_LOG_TOPIC = "devices/+/bell_log"  # bell ring events
+    DEVICE_ACK_TOPIC = "devices/+/ack"  # command acknowledgments
 
 
 class OTAStatusHandler:
@@ -191,6 +194,138 @@ class MQTTListener:
             )
         except Exception as e:
             logger.warning(f"Failed to write health key to Redis: {e}")
+
+    def _handle_alert(self, device_id: str, payload: dict[str, Any]) -> None:
+        """Handle panic/alert message from device. Create DeviceAlert record and notify."""
+        from apps.devices.models.device_alert import DeviceAlert
+        from apps.devices.tasks import notify_panic_alert
+
+        try:
+            device = Device.objects.get(device_id=device_id)
+        except Device.DoesNotExist:
+            logger.warning(f"Alert from unknown device: {device_id}")
+            return
+
+        alert_type = payload.get("type", "panic")
+
+        # RTC drift alert: update device battery status
+        if alert_type == "rtc_drift":
+            drift_sec = payload.get("drift_sec", 0)
+            battery_status = payload.get("battery_status", "low")
+            update_fields = {"rtc_synced": False, "rtc_drift_sec": drift_sec}
+            if battery_status == "dead":
+                update_fields["rtc_battery_status"] = "dead"
+                alert_type = "rtc_battery_dead"
+            else:
+                update_fields["rtc_battery_status"] = "low"
+                # Increment consecutive drift days if drift > 5 min
+                if drift_sec > 300:
+                    from django.db.models import F as db_F
+                    Device.objects.filter(id=device.id).update(
+                        rtc_consecutive_drift_days=db_F("rtc_consecutive_drift_days") + 1,
+                        **update_fields,
+                    )
+                    # Check if now >= 3 consecutive days → mark dead
+                    device.refresh_from_db()
+                    if device.rtc_consecutive_drift_days >= 3:
+                        Device.objects.filter(id=device.id).update(rtc_battery_status="dead")
+                        alert_type = "rtc_battery_dead"
+                    DeviceAlert.objects.update_or_create(
+                        device=device, alert_type=alert_type, resolved=False,
+                        defaults={},
+                    )
+                    logger.warning(f"RTC drift alert from {device_id}: drift={drift_sec}s, consecutive={device.rtc_consecutive_drift_days}")
+                    return
+            Device.objects.filter(id=device.id).update(**update_fields)
+            DeviceAlert.objects.update_or_create(
+                device=device, alert_type=alert_type, resolved=False,
+                defaults={},
+            )
+            logger.warning(f"RTC drift alert from {device_id}: drift={drift_sec}s, battery={battery_status}")
+            return
+
+        DeviceAlert.objects.create(device=device, alert_type=alert_type)
+        logger.warning(f"ALERT [{alert_type}] from device {device_id}")
+
+        # Dispatch Telegram notification asynchronously
+        notify_panic_alert.delay(device_id, alert_type)
+
+    def _handle_ack(self, device_id: str, payload: dict[str, Any]) -> None:
+        """Handle ACK message from device. Update CommandLog status."""
+        from apps.devices.models.command_log import CommandLog
+
+        msg_id = payload.get("msg_id")
+        if not msg_id:
+            logger.warning(f"ACK from {device_id} missing msg_id")
+            return
+
+        try:
+            cmd_log = CommandLog.objects.get(msg_id=msg_id)
+        except CommandLog.DoesNotExist:
+            logger.warning(f"ACK for unknown msg_id={msg_id} from {device_id}")
+            return
+
+        ack_status = payload.get("status", "ok")
+        now = timezone.now()
+
+        if ack_status == "error":
+            cmd_log.status = "failed"
+            cmd_log.error_message = payload.get("error", "Device reported error")
+        else:
+            cmd_log.status = "delivered"
+
+        cmd_log.acked_at = now
+        cmd_log.save(update_fields=["status", "acked_at", "error_message"])
+        logger.info(f"ACK received: msg_id={msg_id}, status={cmd_log.status}")
+
+    def _handle_bell_log(self, device_id: str, payload: dict[str, Any]) -> None:
+        """Handle bell ring log from device. Create BellLog record with cache-based rate limiting."""
+        from django.core.cache import cache
+        from apps.devices.models.bell_log import BellLog
+
+        # Cache-based rate limit: 1 log per device per second (avoids DB query)
+        cache_key = f"bell_log_rl:{device_id}"
+        if cache.get(cache_key):
+            logger.debug(f"Bell log rate limited for {device_id}")
+            return
+        cache.set(cache_key, 1, timeout=1)
+
+        try:
+            device = Device.objects.get(device_id=device_id)
+        except Device.DoesNotExist:
+            logger.warning(f"Bell log from unknown device: {device_id}")
+            return
+
+        BellLog.objects.create(
+            device=device,
+            rang_at=timezone.now(),
+            duration_ms=payload.get("duration", 3000),
+            trigger_source=payload.get("source", "schedule"),
+        )
+
+    def _check_schedule_version(self, device_id: str, device_version: int) -> None:
+        """Compare device schedule version with server; push update if outdated."""
+        from apps.devices.models import Schedule
+        from apps.devices.services.mqtt_publisher import mqtt_publisher
+
+        try:
+            schedule = Schedule.objects.select_related("device").get(
+                device__device_id=device_id, is_active=True
+            )
+        except Schedule.DoesNotExist:
+            return
+
+        if device_version >= schedule.version:
+            return
+
+        # Device is outdated — push current schedule
+        if mqtt_publisher.send_schedule(device_id, schedule.times, version=schedule.version, days_mask=schedule.days_mask):
+            schedule.sync_pending = False
+            schedule.synced_at = timezone.now()
+            schedule.save(update_fields=["sync_pending", "synced_at"])
+            logger.info(
+                f"Schedule pushed to {device_id}: device_v={device_version} < server_v={schedule.version}"
+            )
     
     def _health_loop(self):
         """Background thread that periodically writes health to Redis."""
@@ -207,8 +342,11 @@ class MQTTListener:
             # Subscribe to device topics
             client.subscribe(self.config.OTA_STATUS_TOPIC, qos=1)
             client.subscribe(self.config.DEVICE_STATUS_TOPIC, qos=0)
+            client.subscribe(self.config.DEVICE_ALERT_TOPIC, qos=1)
+            client.subscribe(self.config.BELL_LOG_TOPIC, qos=1)
+            client.subscribe(self.config.DEVICE_ACK_TOPIC, qos=1)
             
-            logger.info(f"Subscribed to: {self.config.OTA_STATUS_TOPIC}, {self.config.DEVICE_STATUS_TOPIC}")
+            logger.info(f"Subscribed to: {self.config.OTA_STATUS_TOPIC}, {self.config.DEVICE_STATUS_TOPIC}, {self.config.DEVICE_ALERT_TOPIC}, {self.config.BELL_LOG_TOPIC}, {self.config.DEVICE_ACK_TOPIC}")
         else:
             logger.error(f"Connection failed with code: {reason_code}")
     
@@ -236,10 +374,62 @@ class MQTTListener:
             
             if topic.endswith("/ota/status"):
                 OTAStatusHandler.handle(device_id, payload)
+            elif topic.endswith("/ack"):
+                self._handle_ack(device_id, payload)
+            elif topic.endswith("/alert"):
+                # Panic button or device alert
+                self._handle_alert(device_id, payload)
+            elif topic.endswith("/bell_log"):
+                self._handle_bell_log(device_id, payload)
             elif topic.endswith("/status") and not topic.endswith("/ota/status"):
-                # Heartbeat — update last_seen; reactivate only if was inactive
+                # Heartbeat — update last_seen and monitoring fields
                 now = timezone.now()
-                Device.objects.filter(device_id=device_id).update(last_seen=now)
+                update_fields = {"last_seen": now}
+                if payload.get("status") == "offline":
+                    update_fields["wifi_mode"] = "disconnected"
+                if "rssi" in payload:
+                    update_fields["rssi"] = int(payload["rssi"])
+                if "uptime" in payload:
+                    update_fields["uptime_sec"] = int(payload["uptime"])
+                if "heap" in payload:
+                    update_fields["free_heap"] = int(payload["heap"])
+                if "wifi_mode" in payload:
+                    wm = payload["wifi_mode"]
+                    if wm in ("sta", "ap", "ap_sta", "disconnected"):
+                        update_fields["wifi_mode"] = wm
+                if payload.get("rtc_ok"):
+                    update_fields["rtc_synced"] = True
+                    update_fields["rtc_battery_status"] = "ok"
+                    update_fields["rtc_drift_sec"] = None
+                    update_fields["rtc_consecutive_drift_days"] = 0
+                # Handle rtc_battery/rtc_drift_sec from heartbeat
+                if "rtc_battery" in payload:
+                    battery = payload["rtc_battery"]
+                    if battery in ("ok", "low", "dead"):
+                        update_fields["rtc_battery_status"] = battery
+                    if battery == "ok":
+                        update_fields["rtc_synced"] = True
+                        update_fields["rtc_consecutive_drift_days"] = 0
+                if "rtc_drift_sec" in payload:
+                    update_fields["rtc_drift_sec"] = int(payload["rtc_drift_sec"])
+                if "rtc_consecutive_drift_days" in payload:
+                    update_fields["rtc_consecutive_drift_days"] = int(payload["rtc_consecutive_drift_days"])
+                Device.objects.filter(device_id=device_id).update(**update_fields)
+
+                # Auto-resolve RTC alerts when device reports battery OK
+                if payload.get("rtc_ok") or payload.get("rtc_battery") == "ok":
+                    from apps.devices.models.device_alert import DeviceAlert
+                    DeviceAlert.objects.filter(
+                        device__device_id=device_id,
+                        alert_type__in=["rtc_drift", "rtc_battery_dead"],
+                        resolved=False,
+                    ).update(resolved=True, resolved_at=now)
+
+                # Schedule version check: push new schedule if device is outdated
+                sched_ver = payload.get("schedule_version") or payload.get("sched_ver")
+                if sched_ver is not None:
+                    self._check_schedule_version(device_id, int(sched_ver))
+
                 reactivated = Device.objects.filter(
                     device_id=device_id, status="inactive"
                 ).update(status="active")
@@ -252,6 +442,11 @@ class MQTTListener:
                             source=LogSource.MQTT,
                             message="Device reconnected (was inactive)",
                         )
+                        # Auto-resolve offline alerts for this device
+                        from apps.devices.models.device_alert import DeviceAlert
+                        DeviceAlert.objects.filter(
+                            device=device, alert_type="offline", resolved=False
+                        ).update(resolved=True, resolved_at=now)
                     except Device.DoesNotExist:
                         pass
                     

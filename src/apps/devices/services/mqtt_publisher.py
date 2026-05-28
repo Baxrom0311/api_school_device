@@ -285,14 +285,30 @@ class MQTTPublisher:
     
     # ============ Command Helpers ============
     
-    def send_schedule(self, device_id: str, times: list[str], version: int = 0, days_mask: int = 0x1F, bell_duration: int = 3000) -> bool:
+    def _create_command_log(self, device_id: str, command_type: str, payload: dict) -> Optional[str]:
+        """Create CommandLog and return msg_id string. Returns None if device not found."""
+        try:
+            from apps.devices.models import Device
+            from apps.devices.models.command_log import CommandLog
+            import uuid
+            device = Device.objects.get(device_id=device_id)
+            msg_id = uuid.uuid4()
+            CommandLog.objects.create(
+                device=device,
+                msg_id=msg_id,
+                command_type=command_type,
+                payload=payload,
+            )
+            return str(msg_id)
+        except Exception as e:
+            logger.warning(f"Failed to create CommandLog for {device_id}: {e}")
+            return None
+
+    def send_schedule(self, device_id: str, times: list[str], version: int = 0, days_mask: int = 0x1F, bell_duration: int = 3000) -> Optional[str]:
         """
         Push schedule to device via schedule topic.
         
-        Converts times list ["08:30", "09:15"] to ESP32 format:
-        {"version": 3, "entries": [{"hour": 8, "minute": 30, "duration": 3000, "days": 31}, ...]}
-        
-        QoS 1: Ensure delivery - schedules are critical
+        Returns msg_id string on success, None on failure.
         """
         entries = []
         for t in times:
@@ -307,27 +323,36 @@ class MQTTPublisher:
         
         topic = f"devices/{device_id}/schedule"
         payload = {"version": version, "entries": entries}
+        
+        msg_id = self._create_command_log(device_id, "schedule_sync", payload)
+        if msg_id:
+            payload["msg_id"] = msg_id
+        
         success = self.publish(topic, payload, qos=1)
         
         if success:
-            logger.info(f"Schedule sent to {device_id}: {len(entries)} entries")
-        
-        return success
+            logger.info(f"Schedule sent to {device_id}: {len(entries)} entries, msg_id={msg_id}")
+            return msg_id
+        return None
     
-    def ring(self, device_id: str, duration: int = 5) -> bool:
+    def ring(self, device_id: str, duration: int = 5) -> Optional[str]:
         """
         Trigger immediate ring on device.
         
-        ESP expects: {"command": "ring", "duration": 5}
-        QoS 0: Fire-and-forget for real-time responsiveness
+        Returns msg_id string on success, None on failure.
         """
         payload = {"command": "ring", "duration": duration}
+        
+        msg_id = self._create_command_log(device_id, "ring", payload)
+        if msg_id:
+            payload["msg_id"] = msg_id
+        
         success = self.send_to_device(device_id, payload, qos=0)
         
         if success:
-            logger.info(f"Ring command sent to {device_id} (dur={duration}s)")
-        
-        return success
+            logger.info(f"Ring command sent to {device_id} (dur={duration}s), msg_id={msg_id}")
+            return msg_id
+        return None
     
     def send_ota(self, device_id: str, firmware_url: str) -> bool:
         """
@@ -353,19 +378,24 @@ class MQTTPublisher:
         payload = {"command": "ntp_sync", "server": ntp_server}
         return self.send_to_device(device_id, payload, qos=1)
     
-    def send_restart(self, device_id: str) -> bool:
+    def send_restart(self, device_id: str) -> Optional[str]:
         """
         Restart device remotely.
         
-        Use for troubleshooting or applying settings.
+        Returns msg_id string on success, None on failure.
         """
         payload = {"command": "reboot"}
+        
+        msg_id = self._create_command_log(device_id, "reboot", payload)
+        if msg_id:
+            payload["msg_id"] = msg_id
+        
         success = self.send_to_device(device_id, payload, qos=1)
         
         if success:
             logger.warning(f"Restart command sent to {device_id}")
-        
-        return success
+            return msg_id
+        return None
     
     def send_config(
         self,
@@ -388,11 +418,12 @@ class MQTTPublisher:
         dates: list[dict],
         silent: bool = False,
         version: int = 1,
-    ) -> bool:
+    ) -> Optional[str]:
         """
         Push holidays (ranges + dates) to device.
 
         Topic: devices/{device_id}/holidays
+        Returns msg_id string on success, None on failure.
         """
         topic = f"devices/{device_id}/holidays"
         payload = {
@@ -401,7 +432,15 @@ class MQTTPublisher:
             "dates": dates,
             "silent": silent,
         }
-        return self.publish(topic, payload, qos=1)
+
+        msg_id = self._create_command_log(device_id, "holiday_sync", payload)
+        if msg_id:
+            payload["msg_id"] = msg_id
+
+        success = self.publish(topic, payload, qos=1)
+        if success:
+            return msg_id
+        return None
     
     # ============ Bulk Operations ============
     

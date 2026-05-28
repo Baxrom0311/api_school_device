@@ -5,10 +5,12 @@ from apps.devices.api.v1.views.device_endpoints import (
     DeviceAutoRegisterView,
     DeviceActivateView,
     DeviceCredentialsView,
+    DeviceScheduleView,
 )
 
 urlpatterns = [
     path("auto-register/", DeviceAutoRegisterView.as_view(), name="device-auto-register"),
     path("activate/", DeviceActivateView.as_view(), name="device-activate"),
     path("credentials/", DeviceCredentialsView.as_view(), name="device-credentials"),
+    path("schedule/", DeviceScheduleView.as_view(), name="device-schedule"),
 ]

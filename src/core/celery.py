@@ -14,6 +14,18 @@ app.autodiscover_tasks()
 
 app.conf.result_expires = 3600  # Expire task results after 1 hour
 
+# Task queue routing: emergency tasks get priority queue
+app.conf.task_routes = {
+    "apps.devices.tasks.broadcast_emergency_command": {"queue": "emergency"},
+    "apps.devices.tasks.notify_panic_alert": {"queue": "emergency"},
+    "apps.devices.tasks.auto_clear_silence": {"queue": "emergency"},
+    "apps.devices.tasks.process_ota_batch": {"queue": "ota"},
+    "apps.devices.tasks.check_ota_completion": {"queue": "ota"},
+}
+
+app.conf.task_queue_max_priority = 10
+app.conf.task_default_priority = 5
+
 # Connect Prometheus monitoring signals (optional dependency)
 try:
     import core.celery_monitoring  # noqa: F401, E402
@@ -50,5 +62,43 @@ app.conf.beat_schedule = {
         "task": "devices.cleanup_device_logs",
         "schedule": crontab(hour=3, minute=0),
         "kwargs": {"retention_days": 90},
+    },
+    # Sync holidays to devices daily at midnight
+    "sync-holidays-to-devices": {
+        "task": "apps.devices.tasks.sync_holidays_to_devices",
+        "schedule": crontab(hour=0, minute=0),
+    },
+    # Sync iCal URLs to schedule templates every 6 hours
+    "sync-ical-schedules": {
+        "task": "apps.devices.tasks.sync_ical_schedules",
+        "schedule": crontab(minute=0, hour="*/6"),
+    },
+    # Cleanup old bell logs daily at 4 AM
+    "cleanup-bell-logs": {
+        "task": "devices.cleanup_bell_logs",
+        "schedule": crontab(hour=4, minute=0),
+        "kwargs": {"retention_days": 30},
+    },
+    # Auto-clear silence at end of day (23:59) so next day resumes normal operation
+    "auto-clear-silence": {
+        "task": "apps.devices.tasks.auto_clear_silence",
+        "schedule": crontab(hour=23, minute=59),
+    },
+    # Detect stale schedules (not synced in 7+ days) daily at 6 AM
+    "detect-stale-schedules": {
+        "task": "apps.devices.tasks.detect_stale_schedules",
+        "schedule": crontab(hour=6, minute=0),
+        "kwargs": {"stale_days": 7},
+    },
+    # Check consecutive RTC drift daily at 3:30 AM (after SNTP sync at 3:00)
+    "check-rtc-consecutive-drift": {
+        "task": "apps.devices.tasks.check_rtc_consecutive_drift",
+        "schedule": crontab(hour=3, minute=30),
+        "kwargs": {"drift_threshold_sec": 300},
+    },
+    # Check command ACK timeouts every 30 seconds
+    "check-command-timeouts": {
+        "task": "devices.check_command_timeouts",
+        "schedule": 30.0,
     },
 }
