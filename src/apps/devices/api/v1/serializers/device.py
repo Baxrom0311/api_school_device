@@ -95,10 +95,12 @@ class DeviceCredentialsSerializer(serializers.ModelSerializer):
 class ScheduleNestedSerializer(serializers.ModelSerializer):
     """Minimal schedule info for device list/detail"""
     times_count = serializers.IntegerField(read_only=True)
+    device_id = serializers.CharField(source="device.device_id", read_only=True)
+    device_name = serializers.CharField(source="device.school_name", read_only=True)
     
     class Meta:
         model = Schedule
-        fields = ["id", "times", "times_count", "is_active", "sync_pending"]
+        fields = ["id", "device", "device_id", "device_name", "times", "times_count", "days_mask", "bell_duration", "is_active", "timezone", "version", "synced_at", "sync_pending", "created_at", "updated_at"]
 
 
 class DeviceSerializer(serializers.ModelSerializer):
@@ -140,10 +142,15 @@ class DeviceListSerializer(serializers.ModelSerializer):
             "status",
             "firmware_version",
             "rtc_synced",
+            "rtc_battery_status",
+            "wifi_mode",
             "has_schedule",
             "registration_status",
             "registered_at",
             "last_seen",
+            "rssi",
+            "uptime_sec",
+            "free_heap",
             "created_at",
             "updated_at",
         ]
@@ -180,9 +187,16 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
             "target_firmware_version",
             "needs_ota_update",
             "rtc_synced",
+            "rtc_battery_status",
+            "rtc_drift_sec",
+            "rtc_consecutive_drift_days",
+            "wifi_mode",
             "created_at",
             "updated_at",
             "last_seen",
+            "rssi",
+            "uptime_sec",
+            "free_heap",
             "schedule",
             "api_key",
             "registration_status",
@@ -193,9 +207,16 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
             "id",
             "firmware_version",
             "rtc_synced",
+            "rtc_battery_status",
+            "rtc_drift_sec",
+            "rtc_consecutive_drift_days",
+            "wifi_mode",
             "created_at",
             "updated_at",
             "last_seen",
+            "rssi",
+            "uptime_sec",
+            "free_heap",
             "api_key",
             "registration_status",
             "registered_at",

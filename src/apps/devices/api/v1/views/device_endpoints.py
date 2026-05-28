@@ -2,13 +2,14 @@
 import re
 
 from django.core.cache import cache
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.devices.models import Device
+from apps.devices.models import Device, Schedule
 from apps.devices.models.device import RegistrationStatus
 from apps.devices.api.v1.serializers.device import (
     DeviceAutoRegisterSerializer,
@@ -177,3 +178,64 @@ class DeviceCredentialsView(APIView):
             })
 
         return _credentials_response(device)
+
+
+class DeviceScheduleView(APIView):
+    """GET /api/v1/device/schedule/?device_id=XXXX — ESP32 fetches its schedule via HTTP.
+
+    Used when device comes online and needs schedule before MQTT connects.
+    Returns schedule times + version so ESP32 can compare with NVS.
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+    def get(self, request):
+        device_id = request.query_params.get("device_id")
+        if not device_id:
+            return Response(
+                {"detail": "device_id query param is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        normalized = _normalize_mac(device_id)
+        try:
+            device = Device.objects.get(device_id=normalized)
+        except Device.DoesNotExist:
+            return Response(
+                {"detail": "Device not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if device.registration_status != RegistrationStatus.REGISTERED:
+            return Response(
+                {"detail": "Device is not registered."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            schedule = Schedule.objects.get(device=device, is_active=True)
+        except Schedule.DoesNotExist:
+            return Response({"version": 0, "times": [], "entries": []})
+
+        # Build ESP32-format entries
+        entries = []
+        for t in schedule.times:
+            parts = t.split(":")
+            if len(parts) == 2:
+                entries.append({
+                    "hour": int(parts[0]),
+                    "minute": int(parts[1]),
+                    "duration": schedule.bell_duration,
+                    "days": schedule.days_mask,
+                })
+
+        # Mark as synced
+        Schedule.objects.filter(pk=schedule.pk).update(
+            sync_pending=False, synced_at=timezone.now()
+        )
+
+        return Response({
+            "version": schedule.version,
+            "times": schedule.times,
+            "entries": entries,
+        })

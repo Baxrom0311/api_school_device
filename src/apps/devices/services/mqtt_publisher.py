@@ -285,12 +285,12 @@ class MQTTPublisher:
     
     # ============ Command Helpers ============
     
-    def send_schedule(self, device_id: str, times: list[str], version: int = 0) -> bool:
+    def send_schedule(self, device_id: str, times: list[str], version: int = 0, days_mask: int = 0x1F, bell_duration: int = 3000) -> bool:
         """
         Push schedule to device via schedule topic.
         
         Converts times list ["08:30", "09:15"] to ESP32 format:
-        {"version": 3, "entries": [{"hour": 8, "minute": 30, "duration": 3000, "days": 127}, ...]}
+        {"version": 3, "entries": [{"hour": 8, "minute": 30, "duration": 3000, "days": 31}, ...]}
         
         QoS 1: Ensure delivery - schedules are critical
         """
@@ -301,8 +301,8 @@ class MQTTPublisher:
                 entries.append({
                     "hour": int(parts[0]),
                     "minute": int(parts[1]),
-                    "duration": 3000,  # 3 seconds default bell duration
-                    "days": 0x1F,  # Mon-Fri (bits 0-4)
+                    "duration": bell_duration,
+                    "days": days_mask,
                 })
         
         topic = f"devices/{device_id}/schedule"
@@ -380,6 +380,28 @@ class MQTTPublisher:
         topic = f"devices/{device_id}/config"
         payload = config
         return self.publish(topic, payload, qos=1)
+
+    def send_holidays(
+        self,
+        device_id: str,
+        ranges: list[dict],
+        dates: list[dict],
+        silent: bool = False,
+        version: int = 1,
+    ) -> bool:
+        """
+        Push holidays (ranges + dates) to device.
+
+        Topic: devices/{device_id}/holidays
+        """
+        topic = f"devices/{device_id}/holidays"
+        payload = {
+            "version": version,
+            "ranges": ranges,
+            "dates": dates,
+            "silent": silent,
+        }
+        return self.publish(topic, payload, qos=1)
     
     # ============ Bulk Operations ============
     
@@ -388,6 +410,8 @@ class MQTTPublisher:
         device_ids: list[str],
         times: list[str],
         version: int = 0,
+        days_mask: int = 0x1F,
+        bell_duration: int = 3000,
     ) -> dict[str, bool]:
         """
         Send same schedule to multiple devices.
@@ -396,7 +420,7 @@ class MQTTPublisher:
         """
         results = {}
         for device_id in device_ids:
-            results[device_id] = self.send_schedule(device_id, times, version=version)
+            results[device_id] = self.send_schedule(device_id, times, version=version, days_mask=days_mask, bell_duration=bell_duration)
         return results
     
     def disconnect(self) -> None:

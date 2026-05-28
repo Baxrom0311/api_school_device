@@ -69,7 +69,7 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         queryset = Schedule.objects.select_related("device").all()
         if (
             self.request.user.is_authenticated
-            and getattr(self.request.user, "role", None) != "ADMIN"
+            and getattr(self.request.user, "role", None) not in ("ADMIN", "SUPERADMIN")
         ):
             queryset = queryset.filter(device__owner=self.request.user)
         return queryset
@@ -92,6 +92,8 @@ class ScheduleViewSet(viewsets.ModelViewSet):
             schedule.device.device_id,
             schedule.times,
             version=schedule.version,
+            days_mask=schedule.days_mask,
+            bell_duration=schedule.bell_duration,
         )
         
         if success:

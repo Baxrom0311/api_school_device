@@ -31,6 +31,8 @@ class ScheduleSerializer(serializers.ModelSerializer):
             "device_name",
             "times",
             "times_count",
+            "days_mask",
+            "bell_duration",
             "is_active",
             "timezone",
             "version",
@@ -61,7 +63,19 @@ class ScheduleUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Schedule
-        fields = ["times", "is_active", "timezone"]
+        fields = ["times", "days_mask", "bell_duration", "is_active", "timezone"]
+    
+    def validate_days_mask(self, value):
+        """Validate days_mask is 0-127"""
+        if not (0 <= value <= 127):
+            raise serializers.ValidationError(_("days_mask must be between 0 and 127"))
+        return value
+    
+    def validate_bell_duration(self, value):
+        """Validate bell_duration is between 500ms and 30000ms"""
+        if not (500 <= value <= 30000):
+            raise serializers.ValidationError(_("bell_duration must be between 500 and 30000 ms"))
+        return value
     
     def validate_times(self, value):
         """Validate all times are in HH:MM format"""
@@ -99,16 +113,16 @@ class ScheduleUpdateSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         """Update schedule and mark for sync"""
-        # Check if times changed
-        times_changed = (
-            "times" in validated_data and 
-            validated_data["times"] != instance.times
+        # Check if times, days_mask, or bell_duration changed
+        sync_needed = (
+            ("times" in validated_data and validated_data["times"] != instance.times) or
+            ("days_mask" in validated_data and validated_data["days_mask"] != instance.days_mask) or
+            ("bell_duration" in validated_data and validated_data["bell_duration"] != instance.bell_duration)
         )
         
         instance = super().update(instance, validated_data)
         
-        # Mark for sync if times changed
-        if times_changed:
+        if sync_needed:
             instance.sync_pending = True
             instance.save(update_fields=["sync_pending"])
         
@@ -123,7 +137,7 @@ class ScheduleCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Schedule
-        fields = ["device", "times", "is_active", "timezone"]
+        fields = ["device", "times", "days_mask", "bell_duration", "is_active", "timezone"]
     
     def validate_device(self, value):
         """Check device doesn't already have a schedule and user owns it"""

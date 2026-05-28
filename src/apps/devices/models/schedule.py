@@ -49,6 +49,18 @@ class Schedule(AbstractBaseModel):
         help_text=_("Device timezone for schedule interpretation"),
     )
     
+    days_mask = models.PositiveSmallIntegerField(
+        default=0x1F,
+        verbose_name=_("Days Mask"),
+        help_text=_("Bitmask: bit0=Mon, bit1=Tue, ..., bit6=Sun. Default 0x1F = Mon-Fri"),
+    )
+
+    bell_duration = models.PositiveIntegerField(
+        default=3000,
+        verbose_name=_("Bell Duration (ms)"),
+        help_text=_("How long the bell rings in milliseconds. Default 3000ms (3s)."),
+    )
+
     # Sync tracking
     version = models.PositiveIntegerField(
         default=1,
@@ -77,10 +89,10 @@ class Schedule(AbstractBaseModel):
         return f"Schedule for {self.device.device_id} ({times_count} times)"
     
     def save(self, *args, **kwargs):
-        # Mark as needing sync and bump version whenever times change
+        # Mark as needing sync and bump version whenever times, days_mask, or bell_duration change
         if self.pk:
-            old = Schedule.objects.filter(pk=self.pk).values("times").first()
-            if old and old["times"] != self.times:
+            old = Schedule.objects.filter(pk=self.pk).values("times", "days_mask", "bell_duration").first()
+            if old and (old["times"] != self.times or old["days_mask"] != self.days_mask or old["bell_duration"] != self.bell_duration):
                 self.sync_pending = True
                 self.version = (self.version or 0) + 1
         super().save(*args, **kwargs)
@@ -89,6 +101,17 @@ class Schedule(AbstractBaseModel):
     def times_count(self) -> int:
         """Number of scheduled ring times"""
         return len(self.times) if isinstance(self.times, list) else 0
+
+    @property
+    def is_stale(self) -> bool:
+        """Schedule is stale if not synced in 7+ days."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        if not self.synced_at:
+            # Never synced — stale if created more than 7 days ago
+            return (timezone.now() - self.created_at) > timedelta(days=7)
+        return (timezone.now() - self.synced_at) > timedelta(days=7)
     
     def validate_times(self) -> list[str]:
         """Validate and return list of errors"""
