@@ -170,12 +170,17 @@ class OTABatchCreateSerializer(serializers.Serializer):
                     "current_version": device.firmware_version,
                     "min_required": firmware.min_version,
                 })
+            elif not firmware.supports_hardware(device.hw_version):
+                incompatible.append({
+                    "device_id": device.device_id,
+                    "hw_version": device.hw_version,
+                    "compatible_hw_versions": firmware.compatible_hw_versions,
+                })
         
         if incompatible:
             raise serializers.ValidationError({
                 "device_ids": _(
-                    f"{len(incompatible)} devices incompatible with firmware. "
-                    f"Minimum version required: {firmware.min_version}"
+                    f"{len(incompatible)} devices incompatible with firmware."
                 ),
                 "incompatible_devices": incompatible[:10],  # Show first 10
             })

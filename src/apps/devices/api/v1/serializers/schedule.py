@@ -10,7 +10,7 @@ import re
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 
-from apps.devices.models import Schedule, Device
+from apps.devices.models import Schedule, ScheduleHistory, Device
 
 
 TIME_PATTERN = re.compile(r'^([01]\d|2[0-3]):([0-5]\d)$')
@@ -157,6 +157,21 @@ class ScheduleCreateSerializer(serializers.ModelSerializer):
         """Reuse validation from update serializer"""
         serializer = ScheduleUpdateSerializer()
         return serializer.validate_times(value)
+
+
+class ScheduleHistorySerializer(serializers.ModelSerializer):
+    """Read-only serializer for archived schedule snapshots."""
+    times_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ScheduleHistory
+        fields = [
+            "id", "version", "times", "times_count", "days_mask",
+            "bell_duration", "created_at",
+        ]
+
+    def get_times_count(self, obj):
+        return len(obj.times) if isinstance(obj.times, list) else 0
 
 
 class ScheduleBulkSyncSerializer(serializers.Serializer):

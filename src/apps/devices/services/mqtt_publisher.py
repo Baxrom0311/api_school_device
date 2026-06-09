@@ -303,7 +303,7 @@ class MQTTPublisher:
             logger.warning(f"Failed to create CommandLog for {device_id}: {e}")
             return None
 
-    def send_schedule(self, device_id: str, times: list[str], version: int = 0, days_mask: int = 0x1F, bell_duration: int = 3000) -> Optional[str]:
+    def send_schedule(self, device_id: str, times: list[str], version: int = 0, days_mask: int = 0x1F, bell_duration: int = 3000) -> Optional[str | bool]:
         """
         Push schedule to device via schedule topic.
         
@@ -327,14 +327,14 @@ class MQTTPublisher:
         if msg_id:
             payload["msg_id"] = msg_id
         
-        success = self.publish(topic, payload, qos=1)
-        
+        success = self.publish(topic, payload, qos=1, retain=True)
+
         if success:
             logger.info(f"Schedule sent to {device_id}: {len(entries)} entries, msg_id={msg_id}")
-            return msg_id
+            return msg_id or True
         return None
     
-    def ring(self, device_id: str, duration: int = 5) -> Optional[str]:
+    def ring(self, device_id: str, duration: int = 5) -> Optional[str | bool]:
         """
         Trigger immediate ring on device.
         
@@ -350,7 +350,7 @@ class MQTTPublisher:
         
         if success:
             logger.info(f"Ring command sent to {device_id} (dur={duration}s), msg_id={msg_id}")
-            return msg_id
+            return msg_id or True
         return None
     
     def send_ota(self, device_id: str, firmware_url: str) -> bool:
@@ -377,7 +377,7 @@ class MQTTPublisher:
         payload = {"command": "ntp_sync", "server": ntp_server}
         return self.send_to_device(device_id, payload, qos=1)
     
-    def send_restart(self, device_id: str) -> Optional[str]:
+    def send_restart(self, device_id: str) -> Optional[str | bool]:
         """
         Restart device remotely.
         
@@ -393,7 +393,7 @@ class MQTTPublisher:
         
         if success:
             logger.warning(f"Restart command sent to {device_id}")
-            return msg_id
+            return msg_id or True
         return None
     
     def send_config(
@@ -436,7 +436,7 @@ class MQTTPublisher:
         if msg_id:
             payload["msg_id"] = msg_id
 
-        success = self.publish(topic, payload, qos=1)
+        success = self.publish(topic, payload, qos=1, retain=True)
         if success:
             return msg_id
         return None

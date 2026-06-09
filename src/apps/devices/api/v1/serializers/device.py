@@ -116,6 +116,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             "description",
             "status",
             "firmware_version",
+            "hw_version",
             "rtc_synced",
             "last_seen",
             "created_at",
@@ -132,6 +133,8 @@ class DeviceListSerializer(serializers.ModelSerializer):
     This returns only what's needed for a dashboard/table.
     """
     has_schedule = serializers.SerializerMethodField()
+    rtc_battery_dead = serializers.SerializerMethodField()
+    schedule_stale = serializers.SerializerMethodField()
     
     class Meta:
         model = Device
@@ -141,10 +144,13 @@ class DeviceListSerializer(serializers.ModelSerializer):
             "school_name",
             "status",
             "firmware_version",
+            "hw_version",
             "rtc_synced",
             "rtc_battery_status",
+            "rtc_battery_dead",
             "wifi_mode",
             "has_schedule",
+            "schedule_stale",
             "registration_status",
             "registered_at",
             "last_seen",
@@ -157,6 +163,13 @@ class DeviceListSerializer(serializers.ModelSerializer):
     
     def get_has_schedule(self, obj) -> bool:
         return hasattr(obj, "schedule")
+
+    def get_rtc_battery_dead(self, obj) -> bool:
+        return obj.rtc_battery_status == "dead"
+
+    def get_schedule_stale(self, obj) -> bool:
+        schedule = getattr(obj, "schedule", None)
+        return bool(schedule and schedule.is_stale)
 
 
 class DeviceDetailSerializer(serializers.ModelSerializer):
@@ -172,6 +185,8 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     is_registered = serializers.BooleanField(read_only=True)
+    rtc_battery_dead = serializers.SerializerMethodField()
+    schedule_stale = serializers.SerializerMethodField()
     
     class Meta:
         model = Device
@@ -183,11 +198,13 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
             "description",
             "status",
             "firmware_version",
+            "hw_version",
             "target_firmware",
             "target_firmware_version",
             "needs_ota_update",
             "rtc_synced",
             "rtc_battery_status",
+            "rtc_battery_dead",
             "rtc_drift_sec",
             "rtc_consecutive_drift_days",
             "wifi_mode",
@@ -198,6 +215,7 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
             "uptime_sec",
             "free_heap",
             "schedule",
+            "schedule_stale",
             "api_key",
             "registration_status",
             "registered_at",
@@ -206,8 +224,10 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "firmware_version",
+            "hw_version",
             "rtc_synced",
             "rtc_battery_status",
+            "rtc_battery_dead",
             "rtc_drift_sec",
             "rtc_consecutive_drift_days",
             "wifi_mode",
@@ -222,6 +242,13 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
             "registered_at",
             "is_registered",
         ]
+
+    def get_rtc_battery_dead(self, obj) -> bool:
+        return obj.rtc_battery_status == "dead"
+
+    def get_schedule_stale(self, obj) -> bool:
+        schedule = getattr(obj, "schedule", None)
+        return bool(schedule and schedule.is_stale)
 
 
 class DeviceCreateSerializer(serializers.ModelSerializer):
@@ -333,6 +360,12 @@ class DeviceAutoRegisterSerializer(serializers.Serializer):
         required=False,
         default="0.0.0",
         help_text=_("Current firmware version"),
+    )
+    hw_version = serializers.CharField(
+        max_length=10,
+        required=False,
+        default="1.0",
+        help_text=_("Current hardware revision"),
     )
 
     def validate_device_id(self, value: str) -> str:

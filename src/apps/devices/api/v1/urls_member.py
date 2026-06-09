@@ -2,7 +2,8 @@
 from django.urls import path
 
 from apps.devices.api.v1.views.member import (
-    MyDevicesView, MySchedulesView, MyDeviceStatusView, MyHolidaysView, MyBellLogsView,
+    MyDevicesView, MySchedulesView, MyScheduleHistoryView, MyDeviceStatusView,
+    MyHolidaysView, MyBellLogsView,
     MyAlertsView, MemberHolidayCreateView, MemberHolidayDeleteView, MemberTodaySilentView,
     MemberAlertResolveView, MemberDeviceRingView, MemberDeviceEmergencyView,
     CommandStatusView, RecentCommandsView,
@@ -14,6 +15,7 @@ from apps.devices.api.v1.views.holiday_range import (
 urlpatterns = [
     path("my-devices/", MyDevicesView.as_view(), name="member-my-devices"),
     path("my-schedules/", MySchedulesView.as_view(), name="member-my-schedules"),
+    path("schedule-history/<uuid:device_id>/", MyScheduleHistoryView.as_view(), name="member-schedule-history"),
     path("device-status/", MyDeviceStatusView.as_view(), name="member-device-status"),
     path("holidays/", MyHolidaysView.as_view(), name="member-holidays"),
     path("holidays/create/", MemberHolidayCreateView.as_view(), name="member-holiday-create"),

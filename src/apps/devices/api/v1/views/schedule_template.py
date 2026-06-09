@@ -43,7 +43,7 @@ class ScheduleTemplateViewSet(viewsets.ModelViewSet):
 
         schedule.times = template.times
         schedule.sync_pending = True
-        schedule.save(update_fields=["times", "sync_pending", "updated_at"])
+        schedule.save()
         return Response({"status": "applied", "times": template.times})
 
     @extend_schema(summary="Import iCal file to create/update schedule", tags=["Schedule Templates"])
@@ -75,7 +75,7 @@ class ScheduleTemplateViewSet(viewsets.ModelViewSet):
 
         schedule.times = times
         schedule.sync_pending = True
-        schedule.save(update_fields=["times", "sync_pending", "updated_at"])
+        schedule.save()
         return Response({"status": "imported", "times": times})
 
     @extend_schema(summary="Apply template to ALL device schedules", tags=["Schedule Templates"])
@@ -83,11 +83,17 @@ class ScheduleTemplateViewSet(viewsets.ModelViewSet):
     def apply_to_all(self, request, pk=None):
         """Apply this template's times to all active device schedules."""
         template = self.get_object()
-        updated = Schedule.objects.filter(
+        schedules = Schedule.objects.filter(
             device__status="active",
             device__registration_status="registered",
             is_active=True,
-        ).update(times=template.times, sync_pending=True)
+        ).select_related("device")
+        updated = 0
+        for schedule in schedules:
+            schedule.times = template.times
+            schedule.sync_pending = True
+            schedule.save()
+            updated += 1
         return Response({"status": "applied", "updated_schedules": updated, "times": template.times})
 
     @extend_schema(summary="Import iCal from URL", tags=["Schedule Templates"])
@@ -120,5 +126,5 @@ class ScheduleTemplateViewSet(viewsets.ModelViewSet):
 
         schedule.times = times
         schedule.sync_pending = True
-        schedule.save(update_fields=["times", "sync_pending", "updated_at"])
+        schedule.save()
         return Response({"status": "imported", "times": times})

@@ -80,11 +80,18 @@ class Device(AbstractBaseModel):
         db_index=True,
     )
     
-    # Firmware info
+    # Firmware & hardware info
     firmware_version = models.CharField(
         max_length=20,
         default="0.0.0",
         verbose_name=_("Firmware Version"),
+        db_index=True,
+    )
+    hw_version = models.CharField(
+        max_length=10,
+        default="1.0",
+        verbose_name=_("Hardware Version"),
+        help_text=_("PCB/sensor revision. Firmware must be compatible with this."),
         db_index=True,
     )
     target_firmware = models.ForeignKey(

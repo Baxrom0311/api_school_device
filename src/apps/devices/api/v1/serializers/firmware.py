@@ -24,6 +24,7 @@ class FirmwareVersionSerializer(serializers.ModelSerializer):
             "changelog",
             "is_stable",
             "min_version",
+            "compatible_hw_versions",
             "rollout_percentage",
             "download_url",
             "devices_count",
@@ -59,6 +60,7 @@ class FirmwareVersionCreateSerializer(serializers.ModelSerializer):
             "changelog",
             "is_stable",
             "min_version",
+            "compatible_hw_versions",
             "rollout_percentage",
         ]
     
@@ -78,6 +80,17 @@ class FirmwareVersionCreateSerializer(serializers.ModelSerializer):
             )
         
         return value
+
+    def validate_compatible_hw_versions(self, value):
+        """Validate hardware revisions as simple strings like 1.0 or 1.1."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError(_("Compatible hardware versions must be a list"))
+        cleaned = []
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                raise serializers.ValidationError(_("Hardware versions must be non-empty strings"))
+            cleaned.append(item.strip())
+        return cleaned
     
     def validate(self, attrs):
         """Cross-field validation"""
@@ -106,6 +119,7 @@ class FirmwareVersionListSerializer(serializers.ModelSerializer):
             "id",
             "version",
             "is_stable",
+            "compatible_hw_versions",
             "file_size",
             "created_at",
         ]

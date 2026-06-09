@@ -39,7 +39,7 @@ django.setup()
 
 import paho.mqtt.client as mqtt
 from django.utils import timezone
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import F
 
 from apps.devices.models import Device
@@ -84,6 +84,7 @@ class MQTTListenerConfig:
     DEVICE_ALERT_TOPIC = "devices/+/alert"  # panic button alerts
     BELL_LOG_TOPIC = "devices/+/bell_log"  # bell ring events
     DEVICE_ACK_TOPIC = "devices/+/ack"  # command acknowledgments
+    DEVICE_SYNC_TOPIC = "devices/+/sync"  # reconnect sync requests
 
 
 class OTAStatusHandler:
@@ -303,6 +304,59 @@ class MQTTListener:
             trigger_source=payload.get("source", "schedule"),
         )
 
+    def _handle_sync(self, device_id: str, payload: dict[str, Any]) -> None:
+        """Handle reconnect sync request from device. Push schedule and holidays if outdated."""
+        logger.info(f"Sync request from {device_id}: {payload}")
+
+        # Update last_seen and version telemetry from reconnect payload
+        update_fields = {"last_seen": timezone.now()}
+        if payload.get("fw"):
+            update_fields["firmware_version"] = str(payload["fw"])[:20]
+        if payload.get("hw"):
+            update_fields["hw_version"] = str(payload["hw"])[:10]
+        Device.objects.filter(device_id=device_id).update(**update_fields)
+
+        # Check and push schedule
+        try:
+            sched_ver = int(payload.get("schedule_version", 0))
+        except (TypeError, ValueError):
+            sched_ver = 0
+        self._check_schedule_version(device_id, sched_ver)
+
+        # Check and push holidays
+        self._check_holiday_version(device_id)
+
+    def _check_holiday_version(self, device_id: str) -> None:
+        """Push current holidays to device on sync request."""
+        import time as _time
+        from apps.devices.models.holiday import Holiday
+        from apps.devices.models.holiday_range import HolidayRange
+        from apps.devices.services.mqtt_publisher import mqtt_publisher
+
+        dates_list = [
+            {"month": h.date.month, "day": h.date.day}
+            for h in Holiday.objects.all()
+        ]
+
+        # Global ranges (device=NULL) + device-specific ranges
+        ranges_qs = HolidayRange.objects.filter(
+            models.Q(device__isnull=True) | models.Q(device__device_id=device_id)
+        )
+        ranges_list = [
+            {"from_month": r.from_month, "from_day": r.from_day,
+             "to_month": r.to_month, "to_day": r.to_day}
+            for r in ranges_qs
+        ]
+
+        if not dates_list and not ranges_list:
+            return
+
+        version = int(_time.time())
+        mqtt_publisher.send_holidays(
+            device_id, ranges=ranges_list, dates=dates_list, version=version,
+        )
+        logger.info(f"Holidays pushed to {device_id} on sync: {len(ranges_list)} ranges, {len(dates_list)} dates")
+
     def _check_schedule_version(self, device_id: str, device_version: int) -> None:
         """Compare device schedule version with server; push update if outdated."""
         from apps.devices.models import Schedule
@@ -319,7 +373,12 @@ class MQTTListener:
             return
 
         # Device is outdated — push current schedule
-        if mqtt_publisher.send_schedule(device_id, schedule.times, version=schedule.version, days_mask=schedule.days_mask):
+        schedule_kwargs = {"version": schedule.version}
+        if schedule.days_mask != 0x1F:
+            schedule_kwargs["days_mask"] = schedule.days_mask
+        if schedule.bell_duration != 3000:
+            schedule_kwargs["bell_duration"] = schedule.bell_duration
+        if mqtt_publisher.send_schedule(device_id, schedule.times, **schedule_kwargs):
             schedule.sync_pending = False
             schedule.synced_at = timezone.now()
             schedule.save(update_fields=["sync_pending", "synced_at"])
@@ -345,8 +404,9 @@ class MQTTListener:
             client.subscribe(self.config.DEVICE_ALERT_TOPIC, qos=1)
             client.subscribe(self.config.BELL_LOG_TOPIC, qos=1)
             client.subscribe(self.config.DEVICE_ACK_TOPIC, qos=1)
-            
-            logger.info(f"Subscribed to: {self.config.OTA_STATUS_TOPIC}, {self.config.DEVICE_STATUS_TOPIC}, {self.config.DEVICE_ALERT_TOPIC}, {self.config.BELL_LOG_TOPIC}, {self.config.DEVICE_ACK_TOPIC}")
+            client.subscribe(self.config.DEVICE_SYNC_TOPIC, qos=1)
+
+            logger.info(f"Subscribed to: {self.config.OTA_STATUS_TOPIC}, {self.config.DEVICE_STATUS_TOPIC}, {self.config.DEVICE_ALERT_TOPIC}, {self.config.BELL_LOG_TOPIC}, {self.config.DEVICE_ACK_TOPIC}, {self.config.DEVICE_SYNC_TOPIC}")
         else:
             logger.error(f"Connection failed with code: {reason_code}")
     
@@ -380,9 +440,9 @@ class MQTTListener:
 
             device_id = parts[1]
 
-            # Validate device_id format (alphanumeric, hyphens, underscores only)
+            # Validate device_id format. MAC-style IDs may include colons.
             if not device_id or len(device_id) > 64 or not all(
-                c.isalnum() or c in "-_" for c in device_id
+                c.isalnum() or c in "-_:" for c in device_id
             ):
                 logger.warning(f"Invalid device_id in topic: {topic}")
                 return
@@ -394,6 +454,8 @@ class MQTTListener:
             elif topic.endswith("/alert"):
                 # Panic button or device alert
                 self._handle_alert(device_id, payload)
+            elif topic.endswith("/sync"):
+                self._handle_sync(device_id, payload)
             elif topic.endswith("/bell_log"):
                 self._handle_bell_log(device_id, payload)
             elif topic.endswith("/status") and not topic.endswith("/ota/status"):
@@ -408,6 +470,10 @@ class MQTTListener:
                     update_fields["uptime_sec"] = int(payload["uptime"])
                 if "heap" in payload:
                     update_fields["free_heap"] = int(payload["heap"])
+                if payload.get("fw"):
+                    update_fields["firmware_version"] = str(payload["fw"])[:20]
+                if payload.get("hw"):
+                    update_fields["hw_version"] = str(payload["hw"])[:10]
                 if "wifi_mode" in payload:
                     wm = payload["wifi_mode"]
                     if wm in ("sta", "ap", "ap_sta", "disconnected"):
@@ -443,7 +509,10 @@ class MQTTListener:
                 # Schedule version check: push new schedule if device is outdated
                 sched_ver = payload.get("schedule_version") or payload.get("sched_ver")
                 if sched_ver is not None:
-                    self._check_schedule_version(device_id, int(sched_ver))
+                    try:
+                        self._check_schedule_version(device_id, int(sched_ver))
+                    except (TypeError, ValueError):
+                        logger.warning(f"Invalid schedule version from {device_id}: {sched_ver}")
 
                 reactivated = Device.objects.filter(
                     device_id=device_id, status="inactive"

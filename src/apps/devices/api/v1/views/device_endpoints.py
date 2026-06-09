@@ -50,11 +50,13 @@ class DeviceAutoRegisterView(APIView):
 
         device_id = serializer.validated_data["device_id"]
         firmware_version = serializer.validated_data.get("firmware_version", "0.0.0")
+        hw_version = serializer.validated_data.get("hw_version", "1.0")
 
         device, created = Device.objects.get_or_create(
             device_id=device_id,
             defaults={
                 "firmware_version": firmware_version,
+                "hw_version": hw_version,
                 "registration_status": RegistrationStatus.PENDING,
             },
         )
@@ -68,9 +70,15 @@ class DeviceAutoRegisterView(APIView):
                 "credentials": None,
             }, status=status.HTTP_201_CREATED)
 
+        update_fields = []
         if device.firmware_version != firmware_version:
             device.firmware_version = firmware_version
-            device.save(update_fields=["firmware_version"])
+            update_fields.append("firmware_version")
+        if device.hw_version != hw_version:
+            device.hw_version = hw_version
+            update_fields.append("hw_version")
+        if update_fields:
+            device.save(update_fields=update_fields)
 
         if device.registration_status == RegistrationStatus.REGISTERED:
             return Response({

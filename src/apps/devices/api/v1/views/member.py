@@ -7,12 +7,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.devices.models import Device, Schedule
+from apps.devices.models import Device, Schedule, ScheduleHistory
 from apps.devices.models.holiday import Holiday
 from apps.devices.models.bell_log import BellLog
 from apps.devices.models.device_alert import DeviceAlert
 from apps.devices.api.v1.serializers.device import DeviceListSerializer
-from apps.devices.api.v1.serializers.schedule import ScheduleSerializer
+from apps.devices.api.v1.serializers.schedule import ScheduleSerializer, ScheduleHistorySerializer
 from apps.devices.api.v1.serializers.holiday import HolidaySerializer
 from apps.devices.api.v1.serializers.bell_log import BellLogSerializer
 from apps.devices.api.v1.serializers.emergency import DeviceAlertSerializer
@@ -42,6 +42,18 @@ class MySchedulesView(generics.ListAPIView):
         ).select_related("device").order_by("-updated_at")
 
 
+class MyScheduleHistoryView(generics.ListAPIView):
+    """GET /api/v1/member/schedule-history/<device_id>/ — previous schedule versions."""
+    serializer_class = ScheduleHistorySerializer
+    permission_classes = [IsMember]
+
+    def get_queryset(self):
+        device_id = self.kwargs["device_id"]
+        return ScheduleHistory.objects.filter(
+            device_id=device_id, device__owner=self.request.user,
+        ).order_by("-created_at")[:50]
+
+
 class MyDeviceStatusView(APIView):
     """GET /api/v1/member/device-status/ — lightweight polling endpoint for device status.
 
@@ -59,6 +71,7 @@ class MyDeviceStatusView(APIView):
         stale_threshold = timezone.now() - timedelta(days=7)
         for d in devices:
             d["schedule_stale"] = False
+            d["rtc_battery_dead"] = d.get("rtc_battery_status") == "dead"
             try:
                 schedule = Schedule.objects.only("synced_at", "created_at").get(device_id=d["id"])
                 synced = schedule.synced_at or schedule.created_at

@@ -385,11 +385,15 @@ def sync_pending_schedules(self, max_devices: int = 100) -> dict:
     
     for schedule in pending:
         try:
+            schedule_kwargs = {"version": schedule.version}
+            if schedule.days_mask != 0x1F:
+                schedule_kwargs["days_mask"] = schedule.days_mask
+            if schedule.bell_duration != 3000:
+                schedule_kwargs["bell_duration"] = schedule.bell_duration
             if mqtt_publisher.send_schedule(
                 schedule.device.device_id,
                 schedule.times,
-                version=schedule.version,
-                days_mask=schedule.days_mask,
+                **schedule_kwargs,
             ):
                 schedule.sync_pending = False
                 schedule.synced_at = timezone.now()
@@ -879,6 +883,11 @@ def sync_holidays_to_devices(self) -> dict:
     # Build holiday dates list
     holidays = Holiday.objects.all()
     dates_list = [{"month": h.date.month, "day": h.date.day} for h in holidays]
+    today = timezone.now().date()
+    today_holiday = any(
+        h.date == today or (h.recurring and h.date.month == today.month and h.date.day == today.day)
+        for h in holidays
+    )
 
     # Build holiday ranges list
     ranges = HolidayRange.objects.filter(device__isnull=True)
@@ -901,7 +910,7 @@ def sync_holidays_to_devices(self) -> dict:
             success += 1
 
     logger.info(f"Holiday sync: {success}/{len(devices)} devices, {len(ranges_list)} ranges, {len(dates_list)} dates")
-    return {"synced": success, "total_devices": len(devices)}
+    return {"synced": success, "total_devices": len(devices), "today_holiday": today_holiday}
 
 
 @shared_task(

@@ -91,8 +91,19 @@ class Schedule(AbstractBaseModel):
     def save(self, *args, **kwargs):
         # Mark as needing sync and bump version whenever times, days_mask, or bell_duration change
         if self.pk:
-            old = Schedule.objects.filter(pk=self.pk).values("times", "days_mask", "bell_duration").first()
+            old = Schedule.objects.filter(pk=self.pk).values(
+                "times", "days_mask", "bell_duration", "version", "device_id"
+            ).first()
             if old and (old["times"] != self.times or old["days_mask"] != self.days_mask or old["bell_duration"] != self.bell_duration):
+                # Archive old schedule before overwriting
+                from apps.devices.models.schedule_history import ScheduleHistory
+                ScheduleHistory.objects.create(
+                    device_id=old["device_id"],
+                    times=old["times"],
+                    days_mask=old["days_mask"],
+                    bell_duration=old["bell_duration"],
+                    version=old["version"],
+                )
                 self.sync_pending = True
                 self.version = (self.version or 0) + 1
         super().save(*args, **kwargs)

@@ -81,6 +81,13 @@ class FirmwareVersion(AbstractBaseModel):
         help_text=_("Minimum firmware version that can upgrade to this version"),
     )
     
+    compatible_hw_versions = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=_("Compatible HW Versions"),
+        help_text=_('HW revisions this firmware supports, e.g. ["1.0", "1.1"]. Empty = all.'),
+    )
+
     # Rollout tracking
     rollout_percentage = models.PositiveSmallIntegerField(
         default=0,
@@ -134,3 +141,9 @@ class FirmwareVersion(AbstractBaseModel):
         current_parts = [int(p) for p in current_version.split(".")]
         
         return current_parts >= min_parts
+
+    def supports_hardware(self, hw_version: str) -> bool:
+        """Check whether this firmware supports the device hardware revision."""
+        if not self.compatible_hw_versions:
+            return True
+        return hw_version in self.compatible_hw_versions

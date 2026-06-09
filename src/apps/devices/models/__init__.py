@@ -9,6 +9,7 @@ from apps.devices.models.holiday_range import HolidayRange
 from apps.devices.models.device_alert import DeviceAlert
 from apps.devices.models.bell_log import BellLog
 from apps.devices.models.schedule_template import ScheduleTemplate
+from apps.devices.models.schedule_history import ScheduleHistory
 from apps.devices.models.command_log import CommandLog
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "DeviceAlert",
     "BellLog",
     "ScheduleTemplate",
+    "ScheduleHistory",
     "CommandLog",
 ]
