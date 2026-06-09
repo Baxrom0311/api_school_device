@@ -111,7 +111,7 @@ services:
       - CELERY_BROKER=redis://:${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}@redis:6379/0
     restart: always
     healthcheck:
-      test: ['CMD', 'python', '-c', 'import django; django.setup(); from django.core.cache import cache; exit(0 if cache.get("mqtt_listener:alive") else 1)']
+      test: ['CMD', 'python', '-c', 'import os; os.environ.setdefault("DJANGO_SETTINGS_MODULE","core.settings"); import django; django.setup(); from django.core.cache import cache; exit(0 if cache.get("mqtt_listener:alive") else 1)']
       interval: 30s
       timeout: 10s
       retries: 3
