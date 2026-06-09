@@ -129,23 +129,22 @@ class MQTTPublisher:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
+                    instance = super().__new__(cls)
+                    instance._initialized = False
+                    instance._client = None
+                    instance._connected = False
+                    instance._connect_lock = threading.Lock()
+                    instance._circuit_breaker = CircuitBreaker(
+                        failure_threshold=int(os.getenv("MQTT_CB_FAILURE_THRESHOLD", "5")),
+                        recovery_timeout=float(os.getenv("MQTT_CB_RECOVERY_TIMEOUT", "60")),
+                    )
+                    instance.config = config or MQTTConfig.from_env()
+                    instance._initialized = True
+                    cls._instance = instance
         return cls._instance
-    
+
     def __init__(self, config: Optional[MQTTConfig] = None):
-        if self._initialized:
-            return
-            
-        self.config = config or MQTTConfig.from_env()
-        self._client: Optional[mqtt.Client] = None
-        self._connected = False
-        self._connect_lock = threading.Lock()
-        self._circuit_breaker = CircuitBreaker(
-            failure_threshold=int(os.getenv("MQTT_CB_FAILURE_THRESHOLD", "5")),
-            recovery_timeout=float(os.getenv("MQTT_CB_RECOVERY_TIMEOUT", "60")),
-        )
-        self._initialized = True
+        pass
         
     def _get_client(self) -> mqtt.Client:
         """Get or create MQTT client with lazy connection"""

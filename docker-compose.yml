@@ -25,11 +25,11 @@ services:
     image: redis:7-alpine
     container_name: iot_redis
     restart: always
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme_redis}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-changeme_redis}', 'ping']
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,13 +45,13 @@ services:
       - '1883:1883' # MQTT TCP
       - '8083:8083' # MQTT WebSocket
       - '8084:8084' # MQTT WSS (Secure WebSocket)
-      - '18083:18083' # EMQX Dashboard
+      - '127.0.0.1:18083:18083' # EMQX Dashboard (localhost only)
     environment:
       - EMQX_NAME=emqx
       - EMQX_HOST=127.0.0.1
-      - EMQX_NODE__COOKIE=${EMQX_NODE_COOKIE:-emqx_change_this_cookie}
-      - EMQX_DASHBOARD__DEFAULT_USERNAME=${EMQX_DASHBOARD_USERNAME:-admin}
-      - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-changeme_emqx_dashboard}
+      - EMQX_NODE__COOKIE=${EMQX_NODE_COOKIE:?EMQX_NODE_COOKIE env var is required}
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=${EMQX_DASHBOARD_USERNAME:?EMQX_DASHBOARD_USERNAME env var is required}
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:?EMQX_DASHBOARD_PASSWORD env var is required}
     volumes:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
@@ -74,7 +74,7 @@ services:
       - .env
     environment:
       - REDIS_ENABLED=true
-      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}@redis:6379/0
     restart: always
     volumes:
       - static_volume:/app/assets/staticfiles
@@ -108,7 +108,7 @@ services:
       - .env
     environment:
       - REDIS_ENABLED=true
-      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}@redis:6379/0
     restart: always
     healthcheck:
       test: ['CMD', 'python', '-c', 'import django; django.setup(); from django.core.cache import cache; exit(0 if cache.get("mqtt_listener:alive") else 1)']
@@ -139,7 +139,7 @@ services:
       - .env
     environment:
       - REDIS_ENABLED=true
-      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}@redis:6379/0
       - CELERY_CONCURRENCY=4
     restart: always
     healthcheck:
@@ -167,7 +167,7 @@ services:
       - .env
     environment:
       - REDIS_ENABLED=true
-      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
+      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}@redis:6379/0
     restart: always
     depends_on:
       postgres:
@@ -190,8 +190,8 @@ services:
       - .env
     environment:
       - REDIS_ENABLED=true
-      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-changeme_redis}@redis:6379/0
-      - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH:-admin:changeme_flower}
+      - CELERY_BROKER=redis://:${REDIS_PASSWORD:-${REDIS_PASSWORD:?REDIS_PASSWORD env var is required}}@redis:6379/0
+      - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH:?FLOWER_BASIC_AUTH env var is required}
     restart: always
     ports:
       - ${CELERY_FLOWER_PORT:-5555}:5555

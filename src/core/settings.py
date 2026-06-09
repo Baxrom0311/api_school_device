@@ -17,7 +17,12 @@ def env_bool(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
     if val is None:
         return default
-    return val.strip().lower() in {"1", "true", "yes", "on"}
+    normalized = val.strip().lower()
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    return default
 
 
 def env_list(name: str) -> list[str]:
@@ -91,7 +96,7 @@ DATABASES = {
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST"),
         "PORT": os.getenv("POSTGRES_PORT"),
-        "CONN_MAX_AGE": 600,
+        "CONN_MAX_AGE": 60,
         "CONN_HEALTH_CHECKS": True,
     }
 }
@@ -140,8 +145,8 @@ MEDIA_ROOT = str(BASE_DIR.joinpath("assets/media"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS") if not DEBUG else []
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 
 LOCALE_MIDDLEWARE_EXCLUDED_PATHS = ["/media/", "/static/"]
 

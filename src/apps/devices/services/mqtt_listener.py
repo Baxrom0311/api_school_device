@@ -355,22 +355,37 @@ class MQTTListener:
         if reason_code != 0:
             logger.warning(f"Unexpected disconnect: {reason_code}. Will attempt reconnect.")
     
+    MAX_PAYLOAD_SIZE = 65536  # 64KB max MQTT payload
+
     def _on_message(self, client, userdata, msg):
         """Callback for incoming messages"""
         try:
             topic = msg.topic
+
+            # Reject oversized payloads to prevent OOM
+            if len(msg.payload) > self.MAX_PAYLOAD_SIZE:
+                logger.warning(f"Payload too large on {topic}: {len(msg.payload)} bytes, dropping")
+                return
+
             payload = json.loads(msg.payload.decode("utf-8"))
-            
+
             logger.debug(f"Received on {topic}: {payload}")
-            
+
             # Route messages based on topic pattern
             # devices/{device_id}/ota/status
             # devices/{device_id}/status
             parts = topic.split("/")
             if len(parts) < 3:
                 return
-            
+
             device_id = parts[1]
+
+            # Validate device_id format (alphanumeric, hyphens, underscores only)
+            if not device_id or len(device_id) > 64 or not all(
+                c.isalnum() or c in "-_" for c in device_id
+            ):
+                logger.warning(f"Invalid device_id in topic: {topic}")
+                return
             
             if topic.endswith("/ota/status"):
                 OTAStatusHandler.handle(device_id, payload)
