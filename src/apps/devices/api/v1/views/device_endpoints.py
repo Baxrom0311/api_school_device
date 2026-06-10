@@ -1,4 +1,5 @@
 """Device endpoints - called by ESP32 firmware (API key auth, no user auth)."""
+
 import re
 
 from django.core.cache import cache
@@ -9,12 +10,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.devices.models import Device, Schedule
-from apps.devices.models.device import RegistrationStatus
 from apps.devices.api.v1.serializers.device import (
     DeviceAutoRegisterSerializer,
-    DeviceCredentialsSerializer,
 )
+from apps.devices.models import Device, Schedule
+from apps.devices.models.device import RegistrationStatus
 
 
 def _credentials_response(device):
@@ -24,13 +24,15 @@ def _credentials_response(device):
     if device.mqtt_username:
         cache.delete(f"mqtt_auth:{device.mqtt_username}")
         cache.delete(f"mqtt_acl:{device.mqtt_username}")
-    return Response({
-        "device_id": device.device_id,
-        "credentials": {
-            "mqtt_username": device.mqtt_username,
-            "mqtt_password": raw_password,
-        },
-    })
+    return Response(
+        {
+            "device_id": device.device_id,
+            "credentials": {
+                "mqtt_username": device.mqtt_username,
+                "mqtt_password": raw_password,
+            },
+        }
+    )
 
 
 def _normalize_mac(mac_str):
@@ -40,6 +42,7 @@ def _normalize_mac(mac_str):
 
 class DeviceAutoRegisterView(APIView):
     """POST /api/v1/device/auto-register/ — ESP32 self-registration."""
+
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "device_register"
@@ -62,13 +65,16 @@ class DeviceAutoRegisterView(APIView):
         )
 
         if created:
-            return Response({
-                "status": "pending",
-                "message": "Device registered, waiting for admin approval.",
-                "device_id": device_id,
-                "registration_status": "pending",
-                "credentials": None,
-            }, status=status.HTTP_201_CREATED)
+            return Response(
+                {
+                    "status": "pending",
+                    "message": "Device registered, waiting for admin approval.",
+                    "device_id": device_id,
+                    "registration_status": "pending",
+                    "credentials": None,
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         update_fields = []
         if device.firmware_version != firmware_version:
@@ -81,20 +87,24 @@ class DeviceAutoRegisterView(APIView):
             device.save(update_fields=update_fields)
 
         if device.registration_status == RegistrationStatus.REGISTERED:
-            return Response({
-                "status": "already_registered",
-                "device_id": device_id,
-                "api_key": device.api_key,
-                "credentials": None,
-                "message": "Use /device/activate/ with device_id to get credentials.",
-            })
+            return Response(
+                {
+                    "status": "already_registered",
+                    "device_id": device_id,
+                    "api_key": device.api_key,
+                    "credentials": None,
+                    "message": "Use /device/activate/ with device_id to get credentials.",
+                }
+            )
 
-        return Response({
-            "status": "pending",
-            "device_id": device_id,
-            "registration_status": device.registration_status,
-            "credentials": None,
-        })
+        return Response(
+            {
+                "status": "pending",
+                "device_id": device_id,
+                "registration_status": device.registration_status,
+                "credentials": None,
+            }
+        )
 
 
 class DeviceActivateView(APIView):
@@ -104,6 +114,7 @@ class DeviceActivateView(APIView):
       {"device_id": "AA:BB:CC:DD:EE:FF"}  (ESP32 MAC-based activation)
       {"api_key": "sk_..."}                (admin/legacy activation)
     """
+
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
 
@@ -150,6 +161,7 @@ class DeviceCredentialsView(APIView):
     Returns existing credentials if already set. Only first activation generates password.
     Use DeviceActivateView to regenerate credentials.
     """
+
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
 
@@ -176,14 +188,16 @@ class DeviceCredentialsView(APIView):
             )
 
         if device.mqtt_password:
-            return Response({
-                "device_id": device.device_id,
-                "credentials": {
-                    "mqtt_username": device.mqtt_username,
-                    "mqtt_password": "***",
-                },
-                "message": "Credentials already set. Use /device/activate/ to regenerate.",
-            })
+            return Response(
+                {
+                    "device_id": device.device_id,
+                    "credentials": {
+                        "mqtt_username": device.mqtt_username,
+                        "mqtt_password": "***",
+                    },
+                    "message": "Credentials already set. Use /device/activate/ to regenerate.",
+                }
+            )
 
         return _credentials_response(device)
 
@@ -194,6 +208,7 @@ class DeviceScheduleView(APIView):
     Used when device comes online and needs schedule before MQTT connects.
     Returns schedule times + version so ESP32 can compare with NVS.
     """
+
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
 
@@ -230,20 +245,22 @@ class DeviceScheduleView(APIView):
         for t in schedule.times:
             parts = t.split(":")
             if len(parts) == 2:
-                entries.append({
-                    "hour": int(parts[0]),
-                    "minute": int(parts[1]),
-                    "duration": schedule.bell_duration,
-                    "days": schedule.days_mask,
-                })
+                entries.append(
+                    {
+                        "hour": int(parts[0]),
+                        "minute": int(parts[1]),
+                        "duration": schedule.bell_duration,
+                        "days": schedule.days_mask,
+                    }
+                )
 
         # Mark as synced
-        Schedule.objects.filter(pk=schedule.pk).update(
-            sync_pending=False, synced_at=timezone.now()
-        )
+        Schedule.objects.filter(pk=schedule.pk).update(sync_pending=False, synced_at=timezone.now())
 
-        return Response({
-            "version": schedule.version,
-            "times": schedule.times,
-            "entries": entries,
-        })
+        return Response(
+            {
+                "version": schedule.version,
+                "times": schedule.times,
+                "entries": entries,
+            }
+        )

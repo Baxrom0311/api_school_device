@@ -1,14 +1,16 @@
 """
 Tests for Phase 3 features: holidays, bell logs, monitoring, iCal, panic alerts.
 """
+
+from datetime import date, timedelta
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import timedelta, date
-from unittest.mock import patch, MagicMock
 from django.utils import timezone
 
 from apps.devices.models import Device
-from apps.devices.tasks import sync_holidays_to_devices, notify_panic_alert, sync_ical_schedules
 from apps.devices.services.ical_parser import parse_ical_to_times
+from apps.devices.tasks import notify_panic_alert, sync_holidays_to_devices, sync_ical_schedules
 
 
 @pytest.mark.django_db
@@ -41,9 +43,7 @@ class TestSyncHolidaysToDevices:
         device.save()
 
         # Holiday in the future
-        Holiday.objects.create(
-            date=date.today() + timedelta(days=30), name="Future", recurring=False
-        )
+        Holiday.objects.create(date=date.today() + timedelta(days=30), name="Future", recurring=False)
 
         result = sync_holidays_to_devices()
 
@@ -59,9 +59,7 @@ class TestSyncHolidaysToDevices:
 
         today = timezone.now().date()
         # Recurring holiday with same month/day but different year
-        Holiday.objects.create(
-            date=date(2000, today.month, today.day), name="Recurring", recurring=True
-        )
+        Holiday.objects.create(date=date(2000, today.month, today.day), name="Recurring", recurring=True)
 
         result = sync_holidays_to_devices()
 
@@ -147,22 +145,27 @@ class TestValidateIcalUrl:
 
     def test_allows_valid_https_url(self):
         from apps.devices.services.url_validator import validate_ical_url
+
         assert validate_ical_url("https://example.com/cal.ics") is None
 
     def test_rejects_http(self):
         from apps.devices.services.url_validator import validate_ical_url
+
         assert validate_ical_url("http://example.com/cal.ics") is not None
 
     def test_rejects_private_ip(self):
         from apps.devices.services.url_validator import validate_ical_url
+
         assert validate_ical_url("https://192.168.1.1/cal.ics") is not None
 
     def test_rejects_loopback(self):
         from apps.devices.services.url_validator import validate_ical_url
+
         assert validate_ical_url("https://127.0.0.1/cal.ics") is not None
 
     def test_rejects_link_local(self):
         from apps.devices.services.url_validator import validate_ical_url
+
         assert validate_ical_url("https://169.254.1.1/cal.ics") is not None
 
 

@@ -10,28 +10,31 @@ Covers:
 - detect_stale_devices: marks inactive devices
 - generate_daily_report: returns correct stats
 """
-import pytest
+
 from datetime import timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
+import pytest
 from django.utils import timezone
 
 from apps.devices.models import Device, Schedule
 from apps.devices.services.mqtt_publisher import MQTTPublisher
 from apps.devices.tasks import (
-    send_bulk_ring,
-    send_bulk_restart,
-    process_ota_batch,
     check_ota_completion,
-    sync_pending_schedules,
     detect_stale_devices,
     generate_daily_report,
+    process_ota_batch,
+    send_bulk_restart,
+    send_bulk_ring,
+    sync_pending_schedules,
 )
 
 
 @pytest.fixture
 def firmware(db):
-    from apps.devices.models import FirmwareVersion
     from django.core.files.base import ContentFile
+
+    from apps.devices.models import FirmwareVersion
 
     fw = FirmwareVersion(version="2.0.0")
     fw.file.save("v2.0.0.bin", ContentFile(b"\x00" * 100), save=False)
@@ -58,7 +61,9 @@ def ota_batch(admin_user, firmware):
 def schedule_device(db, admin_user):
     """A separate device for schedule tests (no pre-existing schedule)."""
     import uuid
+
     from django.utils import timezone
+
     return Device.objects.create(
         device_id=f"SCHED_{uuid.uuid4().hex[:8].upper()}",
         school_name="Schedule School",
@@ -135,9 +140,7 @@ class TestProcessOTABatch:
         from apps.devices.models import OTABatchDevice
         from apps.devices.models.ota_batch import OTABatchStatus, OTADeviceStatus
 
-        OTABatchDevice.objects.create(
-            batch=ota_batch, device=device, status=OTADeviceStatus.PENDING
-        )
+        OTABatchDevice.objects.create(batch=ota_batch, device=device, status=OTADeviceStatus.PENDING)
 
         result = process_ota_batch(ota_batch.id)
 
@@ -175,9 +178,7 @@ class TestProcessOTABatch:
         from apps.devices.models import OTABatchDevice
         from apps.devices.models.ota_batch import OTADeviceStatus
 
-        OTABatchDevice.objects.create(
-            batch=ota_batch, device=device, status=OTADeviceStatus.PENDING
-        )
+        OTABatchDevice.objects.create(batch=ota_batch, device=device, status=OTADeviceStatus.PENDING)
 
         process_ota_batch(ota_batch.id)
 
@@ -309,9 +310,7 @@ class TestDetectStaleDevices:
         device.registration_status = "registered"
         device.save(update_fields=["status", "registration_status"])
         # Set last_seen to 48 hours ago to simulate stale device
-        Device.objects.filter(pk=device.pk).update(
-            last_seen=timezone.now() - timedelta(hours=48)
-        )
+        Device.objects.filter(pk=device.pk).update(last_seen=timezone.now() - timedelta(hours=48))
 
         result = detect_stale_devices(threshold_hours=24)
 
@@ -338,9 +337,7 @@ class TestDetectStaleDevices:
             registration_status="registered",
             last_seen=None,
         )
-        Device.objects.filter(pk=device.pk).update(
-            created_at=timezone.now() - timedelta(hours=48)
-        )
+        Device.objects.filter(pk=device.pk).update(created_at=timezone.now() - timedelta(hours=48))
 
         result = detect_stale_devices(threshold_hours=24)
 
@@ -382,9 +379,7 @@ class TestCleanupDeviceLogs:
             source=LogSource.DEVICE,
             message="Old log",
         )
-        DeviceLog.objects.filter(pk=old_log.pk).update(
-            created_at=timezone.now() - timedelta(days=100)
-        )
+        DeviceLog.objects.filter(pk=old_log.pk).update(created_at=timezone.now() - timedelta(days=100))
 
         # Create recent log
         DeviceLog.objects.create(
@@ -445,6 +440,7 @@ class TestCircuitBreaker:
 
     def test_circuit_half_open_after_timeout(self):
         import time
+
         from apps.devices.services.mqtt_publisher import CircuitBreaker
 
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)

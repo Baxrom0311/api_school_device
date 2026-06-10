@@ -1,10 +1,10 @@
+from django_filters.rest_framework import DateTimeFilter, DjangoFilterBackend, FilterSet
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets
 from rest_framework.filters import OrderingFilter
-from django_filters.rest_framework import DjangoFilterBackend, FilterSet, DateTimeFilter
-from drf_spectacular.utils import extend_schema_view, extend_schema
 
-from apps.devices.models.bell_log import BellLog
 from apps.devices.api.v1.serializers.bell_log import BellLogSerializer
+from apps.devices.models.bell_log import BellLog
 from apps.shared.permissions import IsSuperAdmin
 
 

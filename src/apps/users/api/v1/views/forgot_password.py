@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema, OpenApiResponse
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -60,11 +60,16 @@ class ResetPasswordView(APIView):
     throttle_scope = "reset_password"
 
     @extend_schema(
-        request={"application/json": {"type": "object", "properties": {
-            "email": {"type": "string"},
-            "token": {"type": "string"},
-            "new_password": {"type": "string"},
-        }}},
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string"},
+                    "token": {"type": "string"},
+                    "new_password": {"type": "string"},
+                },
+            }
+        },
         responses={
             200: OpenApiResponse(description="Password reset successful"),
             400: OpenApiResponse(description="Invalid or expired token"),

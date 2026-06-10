@@ -1,6 +1,7 @@
 """
 Tests for device claim flow (Member App user claims a device by MAC address).
 """
+
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -18,10 +19,13 @@ class TestDeviceClaim:
             device_id="CL:AI:M0:00:00:01",
             registration_status=RegistrationStatus.UNREGISTERED,
         )
-        response = user_client.post("/api/v1/devices/claim/", {
-            "device_id": "CL:AI:M0:00:00:01",
-            "device_name": "My Bell",
-        })
+        response = user_client.post(
+            "/api/v1/devices/claim/",
+            {
+                "device_id": "CL:AI:M0:00:00:01",
+                "device_name": "My Bell",
+            },
+        )
         assert response.status_code == 200
         device = Device.objects.get(device_id="CL:AI:M0:00:00:01")
         assert device.owner == regular_user
@@ -34,9 +38,12 @@ class TestDeviceClaim:
             device_id="CL:AI:M0:00:00:02",
             registration_status=RegistrationStatus.PENDING,
         )
-        response = user_client.post("/api/v1/devices/claim/", {
-            "device_id": "CL:AI:M0:00:00:02",
-        })
+        response = user_client.post(
+            "/api/v1/devices/claim/",
+            {
+                "device_id": "CL:AI:M0:00:00:02",
+            },
+        )
         assert response.status_code == 200
         device = Device.objects.get(device_id="CL:AI:M0:00:00:02")
         assert device.owner == regular_user
@@ -48,16 +55,22 @@ class TestDeviceClaim:
             device_id="CL:AI:M0:00:00:03",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        response = user_client.post("/api/v1/devices/claim/", {
-            "device_id": "CL:AI:M0:00:00:03",
-        })
+        response = user_client.post(
+            "/api/v1/devices/claim/",
+            {
+                "device_id": "CL:AI:M0:00:00:03",
+            },
+        )
         assert response.status_code == 400
 
     def test_claim_nonexistent_device(self, user_client, db):
         """Cannot claim a device that doesn't exist."""
-        response = user_client.post("/api/v1/devices/claim/", {
-            "device_id": "NO:SU:CH:DE:VI:CE",
-        })
+        response = user_client.post(
+            "/api/v1/devices/claim/",
+            {
+                "device_id": "NO:SU:CH:DE:VI:CE",
+            },
+        )
         assert response.status_code == 400
 
     def test_claim_second_device_rejected(self, user_client, regular_user, db):
@@ -72,9 +85,12 @@ class TestDeviceClaim:
             device_id="CL:AI:M0:00:00:05",
             registration_status=RegistrationStatus.UNREGISTERED,
         )
-        response = user_client.post("/api/v1/devices/claim/", {
-            "device_id": "CL:AI:M0:00:00:05",
-        })
+        response = user_client.post(
+            "/api/v1/devices/claim/",
+            {
+                "device_id": "CL:AI:M0:00:00:05",
+            },
+        )
         assert response.status_code == 400
 
     def test_claim_requires_auth(self, api_client, db):
@@ -83,9 +99,12 @@ class TestDeviceClaim:
             device_id="CL:AI:M0:00:00:06",
             registration_status=RegistrationStatus.UNREGISTERED,
         )
-        response = api_client.post("/api/v1/devices/claim/", {
-            "device_id": "CL:AI:M0:00:00:06",
-        })
+        response = api_client.post(
+            "/api/v1/devices/claim/",
+            {
+                "device_id": "CL:AI:M0:00:00:06",
+            },
+        )
         assert response.status_code == 401
 
     def test_my_devices_returns_owned(self, user_client, regular_user, db):

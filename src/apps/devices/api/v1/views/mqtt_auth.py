@@ -16,17 +16,18 @@ EMQX config:
         username: "${username}"
         password: "${password}"
 """
+
 import hmac
 import logging
 import os
 
+from django.contrib.auth.hashers import check_password
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
-from django.contrib.auth.hashers import check_password
 
 from apps.devices.models import Device
 
@@ -49,7 +50,7 @@ class MQTTAuthView(APIView):
     """Verify MQTT credentials for EMQX HTTP auth plugin."""
 
     permission_classes = [AllowAny]
-    authentication_classes = []  # No JWT needed - EMQX calls this
+    authentication_classes: list[type] = []  # No JWT needed - EMQX calls this
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):
@@ -87,11 +88,15 @@ class MQTTAuthView(APIView):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         # Cache successful auth to reduce DB load
-        cache.set(cache_key, {
-            "mqtt_password": device.mqtt_password,
-            "registration_status": device.registration_status,
-            "status": getattr(device, "status", "active"),
-        }, MQTT_AUTH_CACHE_TTL)
+        cache.set(
+            cache_key,
+            {
+                "mqtt_password": device.mqtt_password,
+                "registration_status": device.registration_status,
+                "status": getattr(device, "status", "active"),
+            },
+            MQTT_AUTH_CACHE_TTL,
+        )
 
         return Response({"result": "allow"})
 
@@ -104,7 +109,7 @@ class MQTTACLView(APIView):
     """
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes: list[type] = []
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):

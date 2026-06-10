@@ -1,5 +1,5 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
 
 from apps.shared.models.base import AbstractBaseModel
@@ -9,18 +9,10 @@ class HolidayRange(AbstractBaseModel):
     """Holiday date range — periods when bells should not ring (e.g. summer/winter break)."""
 
     name = models.CharField(_("name"), max_length=100)
-    from_month = models.PositiveSmallIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(12)]
-    )
-    from_day = models.PositiveSmallIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(31)]
-    )
-    to_month = models.PositiveSmallIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(12)]
-    )
-    to_day = models.PositiveSmallIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(31)]
-    )
+    from_month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    from_day = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(31)])
+    to_month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    to_day = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(31)])
     device = models.ForeignKey(
         "devices.Device",
         null=True,

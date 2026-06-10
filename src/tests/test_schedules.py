@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from apps.devices.models import Device, Schedule
 from apps.devices.models.device import RegistrationStatus
@@ -30,20 +31,28 @@ class TestScheduleCRUD:
             registration_status=RegistrationStatus.REGISTERED,
         )
         schedule = device.schedule
-        response = school_admin_client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": ["08:00", "08:45", "09:30"],
-        }, format="json")
+        response = school_admin_client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": ["08:00", "08:45", "09:30"],
+            },
+            format="json",
+        )
         assert response.status_code == 200
         assert response.data["times"] == ["08:00", "08:45", "09:30"]
 
     def test_create_schedule_duplicate_device_rejected(self, school_admin_client, device_with_schedule):
         """Cannot create second schedule for device that already has one."""
         device, _ = device_with_schedule
-        response = school_admin_client.post("/api/v1/schedules/", {
-            "device": str(device.id),
-            "times": ["10:00"],
-            "is_active": True,
-        }, format="json")
+        response = school_admin_client.post(
+            "/api/v1/schedules/",
+            {
+                "device": str(device.id),
+                "times": ["10:00"],
+                "is_active": True,
+            },
+            format="json",
+        )
         assert response.status_code == 400
 
     def test_create_schedule_other_user_device(self, school_admin_client, admin_user, db):
@@ -52,18 +61,26 @@ class TestScheduleCRUD:
             owner=admin_user,
             registration_status=RegistrationStatus.REGISTERED,
         )
-        response = school_admin_client.post("/api/v1/schedules/", {
-            "device": str(other_device.id),
-            "times": ["08:00"],
-            "is_active": True,
-        }, format="json")
+        response = school_admin_client.post(
+            "/api/v1/schedules/",
+            {
+                "device": str(other_device.id),
+                "times": ["08:00"],
+                "is_active": True,
+            },
+            format="json",
+        )
         assert response.status_code == 400
 
     def test_update_schedule_times(self, school_admin_client, device_with_schedule):
         _, schedule = device_with_schedule
-        response = school_admin_client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": ["07:30", "08:15", "09:00"],
-        }, format="json")
+        response = school_admin_client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": ["07:30", "08:15", "09:00"],
+            },
+            format="json",
+        )
         assert response.status_code == 200
         assert response.data["times"] == ["07:30", "08:15", "09:00"]
 
@@ -72,9 +89,13 @@ class TestScheduleCRUD:
 
     def test_update_schedule_invalid_time(self, school_admin_client, device_with_schedule):
         _, schedule = device_with_schedule
-        response = school_admin_client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": ["25:00", "invalid"],
-        }, format="json")
+        response = school_admin_client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": ["25:00", "invalid"],
+            },
+            format="json",
+        )
         assert response.status_code == 400
 
     def test_list_schedules_user_sees_own(self, user_client, regular_user, admin_user, db):
@@ -128,17 +149,25 @@ class TestScheduleCRUD:
 
     def test_schedule_time_validation_duplicates(self, school_admin_client, device_with_schedule):
         _, schedule = device_with_schedule
-        response = school_admin_client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": ["08:00", "08:00", "09:00"],
-        }, format="json")
+        response = school_admin_client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": ["08:00", "08:00", "09:00"],
+            },
+            format="json",
+        )
         assert response.status_code == 400
 
     def test_schedule_time_validation_max_entries(self, school_admin_client, device_with_schedule):
         _, schedule = device_with_schedule
         times = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(0, 60, 5)][:101]
-        response = school_admin_client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": times,
-        }, format="json")
+        response = school_admin_client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": times,
+            },
+            format="json",
+        )
         assert response.status_code == 400
 
     def test_regular_user_cannot_write_schedule(self, user_client, regular_user, db):
@@ -149,9 +178,13 @@ class TestScheduleCRUD:
             registration_status=RegistrationStatus.REGISTERED,
         )
         schedule = device.schedule
-        response = user_client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": ["08:00"],
-        }, format="json")
+        response = user_client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": ["08:00"],
+            },
+            format="json",
+        )
         assert response.status_code == 403
 
 

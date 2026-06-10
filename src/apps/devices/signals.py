@@ -5,6 +5,7 @@ WHY signals:
 1. Auto-create schedule when device is created
 2. Invalidate MQTT auth cache on device status change (security)
 """
+
 from django.core.cache import cache
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
@@ -16,7 +17,7 @@ from apps.devices.models import Device, Schedule
 def create_device_schedule(sender, instance: Device, created: bool, **kwargs):
     """
     Auto-create an empty schedule for new devices.
-    
+
     WHY: Every device needs a schedule, even if empty.
     Prevents null checks throughout the codebase.
     """
@@ -26,7 +27,7 @@ def create_device_schedule(sender, instance: Device, created: bool, **kwargs):
             defaults={
                 "times": [],
                 "is_active": True,
-            }
+            },
         )
 
 

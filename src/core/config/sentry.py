@@ -5,8 +5,8 @@ import os
 
 if os.getenv("SENTRY_ENABLED", "false").lower() == "true":
     import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.redis import RedisIntegration
 
     _raw_traces_rate = os.getenv("SENTRY_TRACES_SAMPLE_RATE")

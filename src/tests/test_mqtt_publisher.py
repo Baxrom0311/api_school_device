@@ -6,12 +6,13 @@ Covers:
 - MQTTPublisher connection handling and error cases
 - MQTTListener message routing and OTA status handling
 """
-import json
+
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
 from django.utils import timezone
 
-from apps.devices.services.mqtt_publisher import MQTTPublisher, MQTTConfig
+from apps.devices.services.mqtt_publisher import MQTTConfig, MQTTPublisher
 
 
 @pytest.fixture
@@ -48,9 +49,7 @@ class TestMQTTPublisher:
         result = publisher.publish("test/topic", {"key": "value"}, qos=1)
 
         assert result is True
-        mock_client.publish.assert_called_once_with(
-            "test/topic", '{"key": "value"}', qos=1, retain=False
-        )
+        mock_client.publish.assert_called_once_with("test/topic", '{"key": "value"}', qos=1, retain=False)
 
     @patch.object(MQTTPublisher, "_get_client")
     def test_publish_failure(self, mock_get_client, publisher):
@@ -142,10 +141,11 @@ class TestMQTTListenerOTAHandler:
     """Test OTA status handler in MQTT listener."""
 
     def test_ota_success_updates_batch(self, admin_user, device):
-        from apps.devices.models import OTABatch, OTABatchDevice, FirmwareVersion
+        from django.core.files.base import ContentFile
+
+        from apps.devices.models import FirmwareVersion, OTABatch, OTABatchDevice
         from apps.devices.models.ota_batch import OTABatchStatus, OTADeviceStatus
         from apps.devices.services.mqtt_listener import OTAStatusHandler
-        from django.core.files.base import ContentFile
 
         firmware = FirmwareVersion(version="2.0.0")
         firmware.file.save("v2.0.0.bin", ContentFile(b"\x00" * 100), save=False)
@@ -173,10 +173,11 @@ class TestMQTTListenerOTAHandler:
         assert batch.success_count == 1
 
     def test_ota_failure_updates_batch(self, admin_user, device):
-        from apps.devices.models import OTABatch, OTABatchDevice, FirmwareVersion
+        from django.core.files.base import ContentFile
+
+        from apps.devices.models import FirmwareVersion, OTABatch, OTABatchDevice
         from apps.devices.models.ota_batch import OTABatchStatus, OTADeviceStatus
         from apps.devices.services.mqtt_listener import OTAStatusHandler
-        from django.core.files.base import ContentFile
 
         firmware = FirmwareVersion(version="2.0.0")
         firmware.file.save("v2.0.0.bin", ContentFile(b"\x00" * 100), save=False)

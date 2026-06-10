@@ -1,4 +1,5 @@
 """Tests for DeviceLog viewset (admin-only, read-only)."""
+
 import pytest
 
 from apps.devices.models import Device
@@ -12,15 +13,9 @@ def device_with_logs(db, admin_user):
         school_name="Log School",
         owner=admin_user,
     )
-    DeviceLog.objects.create(
-        device=device, level=LogLevel.INFO, source=LogSource.DEVICE, message="Boot OK"
-    )
-    DeviceLog.objects.create(
-        device=device, level=LogLevel.ERROR, source=LogSource.MQTT, message="Connection lost"
-    )
-    DeviceLog.objects.create(
-        device=device, level=LogLevel.WARNING, source=LogSource.OTA, message="OTA retry"
-    )
+    DeviceLog.objects.create(device=device, level=LogLevel.INFO, source=LogSource.DEVICE, message="Boot OK")
+    DeviceLog.objects.create(device=device, level=LogLevel.ERROR, source=LogSource.MQTT, message="Connection lost")
+    DeviceLog.objects.create(device=device, level=LogLevel.WARNING, source=LogSource.OTA, message="OTA retry")
     return device
 
 
@@ -74,12 +69,15 @@ class TestDeviceLogViewSet:
         assert response.data["id"] == str(log.id)
 
     def test_cannot_create_log_via_api(self, admin_client, device_with_logs):
-        response = admin_client.post("/api/v1/device-logs/", {
-            "device": str(device_with_logs.id),
-            "level": "info",
-            "source": "device",
-            "message": "Should not work",
-        })
+        response = admin_client.post(
+            "/api/v1/device-logs/",
+            {
+                "device": str(device_with_logs.id),
+                "level": "info",
+                "source": "device",
+                "message": "Should not work",
+            },
+        )
         assert response.status_code == 405
 
     def test_cannot_delete_log_via_api(self, admin_client, device_with_logs):
@@ -96,6 +94,7 @@ class TestDeviceLogViewSet:
     def test_filter_by_debug_level(self, admin_client, device_with_logs):
         """Verify debug level filter works after adding DEBUG choice."""
         from apps.devices.models.device_log import DeviceLog, LogLevel, LogSource
+
         DeviceLog.objects.create(
             device=device_with_logs, level=LogLevel.DEBUG, source=LogSource.DEVICE, message="Debug trace"
         )

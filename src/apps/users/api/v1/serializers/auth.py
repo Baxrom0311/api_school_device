@@ -22,8 +22,8 @@ class LoginSerializer(serializers.Serializer):
 
         try:
             user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError("Email yoki parol noto'g'ri.")
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError("Email yoki parol noto'g'ri.") from exc
 
         if not user.check_password(password):
             raise serializers.ValidationError("Email yoki parol noto'g'ri.")
@@ -87,19 +87,19 @@ class RegisterSerializer(serializers.Serializer):
         """Validate passwords match and meet strength requirements."""
         if attrs.get("password") != attrs.get("confirm_password"):
             raise serializers.ValidationError({"confirm_password": "Parollar mos kelmaydi."})
-        
+
         try:
             validate_password(attrs["password"])
         except DjangoValidationError as e:
-            raise serializers.ValidationError({"password": list(e.messages)})
-        
+            raise serializers.ValidationError({"password": list(e.messages)}) from e
+
         return attrs
 
     def create(self, validated_data):
         """Create new user."""
         validated_data.pop("confirm_password")
         password = validated_data.pop("password")
-        
+
         user = User.objects.create_user(
             email=validated_data["email"],
             username=validated_data["username"],
@@ -109,10 +109,10 @@ class RegisterSerializer(serializers.Serializer):
             last_name=validated_data.get("last_name", ""),
             is_verified=False,
         )
-        
+
         # Generate verification token
         user.generate_verification_token()
-        
+
         return user
 
 
@@ -129,8 +129,8 @@ class VerifyEmailSerializer(serializers.Serializer):
 
         try:
             user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError("Token yaroqsiz yoki muddati tugagan.")
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError("Token yaroqsiz yoki muddati tugagan.") from exc
 
         if user.is_verified:
             raise serializers.ValidationError("Token yaroqsiz yoki muddati tugagan.")
@@ -191,8 +191,8 @@ class ChangePasswordSerializer(serializers.Serializer):
         """Validate passwords."""
         if attrs.get("new_password") != attrs.get("confirm_password"):
             raise serializers.ValidationError({"confirm_password": "Parollar mos kelmaydi."})
-        
+
         if attrs.get("old_password") == attrs.get("new_password"):
             raise serializers.ValidationError({"new_password": "Yangi parol eski paroldan farqli bo'lishi kerak."})
-        
+
         return attrs

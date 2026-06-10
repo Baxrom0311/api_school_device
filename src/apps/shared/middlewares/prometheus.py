@@ -3,7 +3,7 @@ import time
 
 from django.http import HttpRequest, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 REQUEST_LATENCY = Histogram("http_request_duration_seconds", "Request duration by path", ["path"])
 REQUEST_COUNT = Counter("http_request_total", "Total HTTP requests by path and status", ["path", "status"])

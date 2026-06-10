@@ -19,11 +19,11 @@ if REDIS_ENABLED:
             "KEY_PREFIX": "iot_device",
         }
     }
-    
+
     # Session Engine - Redis
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
     SESSION_CACHE_ALIAS = "default"
-    
+
     # Celery Configuration - Redis as broker
     CELERY_BROKER_URL = os.getenv("CELERY_BROKER", "redis://redis:6379/0")
     CELERY_RESULT_BACKEND = "django-db"  # Use django-celery-results
@@ -36,10 +36,10 @@ else:
             "LOCATION": "django-cache",
         }
     }
-    
+
     # Session Engine - Database
     SESSION_ENGINE = "django.contrib.sessions.backends.db"
-    
+
     # Celery Configuration (Dummy for development)
     CELERY_BROKER_URL = "memory://"
     CELERY_RESULT_BACKEND = "django-db"

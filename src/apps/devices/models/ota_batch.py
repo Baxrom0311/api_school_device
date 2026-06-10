@@ -8,6 +8,7 @@ WHY this design:
 4. Scheduling support for maintenance windows
 5. Progress tracking for admin visibility
 """
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -34,26 +35,26 @@ class OTADeviceStatus(models.TextChoices):
 class OTABatch(AbstractBaseModel):
     """
     Batch OTA update job for controlled firmware rollout.
-    
+
     Usage:
     1. Create batch with target firmware
     2. Add devices via OTABatchDevice
     3. Celery task processes batch respecting rate limits
     """
-    
+
     name = models.CharField(
         max_length=255,
         verbose_name=_("Batch Name"),
         help_text=_("Descriptive name for this update batch"),
     )
-    
+
     firmware = models.ForeignKey(
         "devices.FirmwareVersion",
         on_delete=models.PROTECT,
         related_name="ota_batches",
         verbose_name=_("Target Firmware"),
     )
-    
+
     status = models.CharField(
         max_length=20,
         choices=OTABatchStatus.choices,
@@ -61,14 +62,14 @@ class OTABatch(AbstractBaseModel):
         verbose_name=_("Status"),
         db_index=True,
     )
-    
+
     # Throttling configuration
     devices_per_hour = models.PositiveIntegerField(
         default=100,
         verbose_name=_("Devices Per Hour"),
         help_text=_("Maximum devices to update per hour (rate limiting)"),
     )
-    
+
     # Scheduling
     scheduled_at = models.DateTimeField(
         null=True,
@@ -76,35 +77,35 @@ class OTABatch(AbstractBaseModel):
         verbose_name=_("Scheduled Start"),
         help_text=_("When to start the batch (null = immediate)"),
     )
-    
+
     started_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name=_("Started At"),
     )
-    
+
     completed_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name=_("Completed At"),
     )
-    
+
     # Progress tracking
     total_devices = models.PositiveIntegerField(
         default=0,
         verbose_name=_("Total Devices"),
     )
-    
+
     success_count = models.PositiveIntegerField(
         default=0,
         verbose_name=_("Success Count"),
     )
-    
+
     failure_count = models.PositiveIntegerField(
         default=0,
         verbose_name=_("Failure Count"),
     )
-    
+
     created_by = models.ForeignKey(
         "users.User",
         null=True,
@@ -113,7 +114,7 @@ class OTABatch(AbstractBaseModel):
         related_name="ota_batches",
         verbose_name=_("Created By"),
     )
-    
+
     class Meta:
         verbose_name = _("OTA Batch")
         verbose_name_plural = _("OTA Batches")
@@ -122,7 +123,7 @@ class OTABatch(AbstractBaseModel):
 
     def __str__(self) -> str:
         return f"{self.name} - v{self.firmware.version} ({self.status})"
-    
+
     @property
     def progress_percentage(self) -> float:
         """Calculate completion percentage"""
@@ -130,7 +131,7 @@ class OTABatch(AbstractBaseModel):
             return 0.0
         processed = self.success_count + self.failure_count
         return round((processed / self.total_devices) * 100, 1)
-    
+
     @property
     def pending_count(self) -> int:
         """Devices still waiting for update"""
@@ -142,21 +143,21 @@ class OTABatchDevice(AbstractBaseModel):
     Individual device within an OTA batch.
     Tracks per-device update status.
     """
-    
+
     batch = models.ForeignKey(
         OTABatch,
         on_delete=models.CASCADE,
         related_name="devices",
         verbose_name=_("Batch"),
     )
-    
+
     device = models.ForeignKey(
         "devices.Device",
         on_delete=models.CASCADE,
         related_name="ota_updates",
         verbose_name=_("Device"),
     )
-    
+
     status = models.CharField(
         max_length=20,
         choices=OTADeviceStatus.choices,
@@ -164,36 +165,36 @@ class OTABatchDevice(AbstractBaseModel):
         verbose_name=_("Status"),
         db_index=True,
     )
-    
+
     notified_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name=_("Notified At"),
         help_text=_("When OTA command was sent via MQTT"),
     )
-    
+
     completed_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name=_("Completed At"),
     )
-    
+
     previous_version = models.CharField(
         max_length=20,
         blank=True,
         verbose_name=_("Previous Version"),
     )
-    
+
     error_message = models.TextField(
         blank=True,
         verbose_name=_("Error Message"),
     )
-    
+
     retry_count = models.PositiveSmallIntegerField(
         default=0,
         verbose_name=_("Retry Count"),
     )
-    
+
     class Meta:
         verbose_name = _("OTA Batch Device")
         verbose_name_plural = _("OTA Batch Devices")

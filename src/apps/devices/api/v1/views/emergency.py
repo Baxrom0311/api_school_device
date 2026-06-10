@@ -1,15 +1,15 @@
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.generics import ListAPIView
-from rest_framework.filters import OrderingFilter
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
+from rest_framework import status
+from rest_framework.filters import OrderingFilter
+from rest_framework.generics import ListAPIView
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from apps.devices.api.v1.serializers.emergency import DeviceAlertSerializer
 from apps.devices.models import Device
 from apps.devices.models.device_alert import DeviceAlert
-from apps.devices.api.v1.serializers.emergency import DeviceAlertSerializer
 from apps.devices.services.rate_limit import emergency_rate_limit
 from apps.shared.permissions import IsSuperAdmin
 
@@ -44,14 +44,14 @@ class EmergencyRingAllView(APIView):
             return Response({"error": "duration must be between 1 and 60"}, status=status.HTTP_400_BAD_REQUEST)
 
         device_ids = list(
-            Device.objects.filter(status="active", registration_status="registered")
-            .values_list("id", flat=True)
+            Device.objects.filter(status="active", registration_status="registered").values_list("id", flat=True)
         )
 
         DeviceAlert.objects.create(alert_type=DeviceAlert.AlertType.EMERGENCY_RING)
 
         if device_ids:
             from apps.devices.tasks import broadcast_emergency_command
+
             broadcast_emergency_command.delay(device_ids, {"command": "ring", "duration": duration})
 
         return Response({"queued": len(device_ids)}, status=status.HTTP_202_ACCEPTED)
@@ -72,14 +72,14 @@ class EmergencyLockdownView(APIView):
             state = bool(raw_state)
 
         device_ids = list(
-            Device.objects.filter(status="active", registration_status="registered")
-            .values_list("id", flat=True)
+            Device.objects.filter(status="active", registration_status="registered").values_list("id", flat=True)
         )
 
         DeviceAlert.objects.create(alert_type=DeviceAlert.AlertType.LOCKDOWN)
 
         if device_ids:
             from apps.devices.tasks import broadcast_emergency_command
+
             broadcast_emergency_command.delay(device_ids, {"command": "lockdown", "state": state})
 
         return Response({"queued": len(device_ids)}, status=status.HTTP_202_ACCEPTED)
@@ -94,17 +94,15 @@ class EmergencyCancelView(APIView):
     @emergency_rate_limit(cooldown_seconds=30)
     def post(self, request):
         now = timezone.now()
-        resolved = DeviceAlert.objects.filter(resolved=False).update(
-            resolved=True, resolved_at=now
-        )
+        resolved = DeviceAlert.objects.filter(resolved=False).update(resolved=True, resolved_at=now)
 
         device_ids = list(
-            Device.objects.filter(status="active", registration_status="registered")
-            .values_list("id", flat=True)
+            Device.objects.filter(status="active", registration_status="registered").values_list("id", flat=True)
         )
 
         if device_ids:
             from apps.devices.tasks import broadcast_emergency_command
+
             broadcast_emergency_command.delay(device_ids, {"command": "cancel_emergency"})
 
         return Response({"resolved_alerts": resolved}, status=status.HTTP_200_OK)

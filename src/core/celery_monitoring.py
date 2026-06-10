@@ -4,10 +4,11 @@ Celery task monitoring via Prometheus metrics.
 Tracks task duration and failure rate using Celery signals.
 Metrics are exposed via django-prometheus at /metrics.
 """
-import time
-import logging
 
-from celery.signals import task_prerun, task_postrun, task_failure, task_retry
+import logging
+import time
+
+from celery.signals import task_failure, task_postrun, task_prerun, task_retry
 from prometheus_client import Counter, Histogram
 
 logger = logging.getLogger(__name__)

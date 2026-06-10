@@ -3,7 +3,6 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
-
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 
 app = Celery("core")
@@ -59,7 +58,7 @@ app.conf.beat_schedule = {
     },
     # Cleanup old device logs daily at 3 AM
     "cleanup-device-logs": {
-        "task": "devices.cleanup_device_logs",
+        "task": "apps.devices.tasks.cleanup_device_logs",
         "schedule": crontab(hour=3, minute=0),
         "kwargs": {"retention_days": 90},
     },
@@ -75,7 +74,7 @@ app.conf.beat_schedule = {
     },
     # Cleanup old bell logs daily at 4 AM
     "cleanup-bell-logs": {
-        "task": "devices.cleanup_bell_logs",
+        "task": "apps.devices.tasks.cleanup_bell_logs",
         "schedule": crontab(hour=4, minute=0),
         "kwargs": {"retention_days": 30},
     },
@@ -98,7 +97,7 @@ app.conf.beat_schedule = {
     },
     # Check command ACK timeouts every 30 seconds
     "check-command-timeouts": {
-        "task": "devices.check_command_timeouts",
+        "task": "apps.devices.tasks.check_command_timeouts",
         "schedule": 30.0,
     },
 }

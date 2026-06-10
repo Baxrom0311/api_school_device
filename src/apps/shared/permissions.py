@@ -1,8 +1,9 @@
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class IsSuperAdmin(BasePermission):
     """Dashboard API — only ADMIN role users."""
+
     message = "Bu amal faqat super adminlar uchun ruxsat etilgan."
 
     def has_permission(self, request, view):
@@ -19,6 +20,7 @@ IsAdminRole = IsSuperAdmin
 
 class IsSchoolAdmin(BasePermission):
     """Member App — SCHOOL_ADMIN or ADMIN can write; all authenticated can read."""
+
     message = "Bu amal faqat maktab adminlari uchun ruxsat etilgan."
 
     def has_permission(self, request, view):
@@ -31,6 +33,7 @@ class IsSchoolAdmin(BasePermission):
 
 class IsMember(BasePermission):
     """Read-only access for regular members (USER role). Admins get full access."""
+
     message = "Oddiy foydalanuvchilar faqat ko'rish huquqiga ega."
 
     def has_permission(self, request, view):
@@ -43,6 +46,7 @@ class IsMember(BasePermission):
 
 class IsDeviceOwner(BasePermission):
     """Object-level: user owns the device or is ADMIN."""
+
     message = "Bu qurilma sizga tegishli emas."
 
     def has_object_permission(self, request, view, obj):
@@ -53,6 +57,7 @@ class IsDeviceOwner(BasePermission):
 
 class IsOwnerOrAdmin(BasePermission):
     """Object-level: user is the object owner or has ADMIN role."""
+
     message = "Bu amal faqat egasi yoki admin uchun ruxsat etilgan."
 
     def has_object_permission(self, request, view, obj):

@@ -1,5 +1,7 @@
 import uuid
+
 from django.db import models
+
 from apps.shared.models.base import AbstractBaseModel
 
 

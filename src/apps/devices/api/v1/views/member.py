@@ -1,56 +1,56 @@
 """Member views - endpoints for SchoolAdmin and Member roles."""
+
 from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.devices.api.v1.serializers.bell_log import BellLogSerializer
+from apps.devices.api.v1.serializers.device import DeviceListSerializer
+from apps.devices.api.v1.serializers.emergency import DeviceAlertSerializer
+from apps.devices.api.v1.serializers.holiday import HolidaySerializer
+from apps.devices.api.v1.serializers.schedule import ScheduleHistorySerializer, ScheduleSerializer
 from apps.devices.models import Device, Schedule, ScheduleHistory
-from apps.devices.models.holiday import Holiday
 from apps.devices.models.bell_log import BellLog
 from apps.devices.models.device_alert import DeviceAlert
-from apps.devices.api.v1.serializers.device import DeviceListSerializer
-from apps.devices.api.v1.serializers.schedule import ScheduleSerializer, ScheduleHistorySerializer
-from apps.devices.api.v1.serializers.holiday import HolidaySerializer
-from apps.devices.api.v1.serializers.bell_log import BellLogSerializer
-from apps.devices.api.v1.serializers.emergency import DeviceAlertSerializer
+from apps.devices.models.holiday import Holiday
 from apps.devices.services import mqtt_publisher
 from apps.shared.permissions import IsMember
 
 
 class MyDevicesView(generics.ListAPIView):
     """GET /api/v1/member/my-devices/ — devices owned by current user."""
+
     serializer_class = DeviceListSerializer
     permission_classes = [IsMember]
 
     def get_queryset(self):
-        return Device.objects.filter(
-            owner=self.request.user
-        ).select_related("schedule").order_by("-created_at")
+        return Device.objects.filter(owner=self.request.user).select_related("schedule").order_by("-created_at")
 
 
 class MySchedulesView(generics.ListAPIView):
     """GET /api/v1/member/my-schedules/ — schedules for current user's devices."""
+
     serializer_class = ScheduleSerializer
     permission_classes = [IsMember]
 
     def get_queryset(self):
-        return Schedule.objects.filter(
-            device__owner=self.request.user
-        ).select_related("device").order_by("-updated_at")
+        return Schedule.objects.filter(device__owner=self.request.user).select_related("device").order_by("-updated_at")
 
 
 class MyScheduleHistoryView(generics.ListAPIView):
     """GET /api/v1/member/schedule-history/<device_id>/ — previous schedule versions."""
+
     serializer_class = ScheduleHistorySerializer
     permission_classes = [IsMember]
 
     def get_queryset(self):
         device_id = self.kwargs["device_id"]
         return ScheduleHistory.objects.filter(
-            device_id=device_id, device__owner=self.request.user,
+            device_id=device_id,
+            device__owner=self.request.user,
         ).order_by("-created_at")[:50]
 
 
@@ -60,12 +60,18 @@ class MyDeviceStatusView(APIView):
     Returns minimal data for real-time status updates without full serialization overhead.
     Includes schedule_stale flag for dashboard badge.
     """
+
     permission_classes = [IsMember]
 
     def get(self, request):
         devices = Device.objects.filter(owner=request.user).values(
-            "id", "device_id", "status", "last_seen", "rtc_synced",
-            "rtc_battery_status", "rtc_consecutive_drift_days",
+            "id",
+            "device_id",
+            "status",
+            "last_seen",
+            "rtc_synced",
+            "rtc_battery_status",
+            "rtc_consecutive_drift_days",
         )
         result = []
         stale_threshold = timezone.now() - timedelta(days=7)
@@ -85,6 +91,7 @@ class MyDeviceStatusView(APIView):
 
 class MyHolidaysView(generics.ListAPIView):
     """GET /api/v1/member/holidays/ — read-only holiday list with optional date filter."""
+
     serializer_class = HolidaySerializer
     permission_classes = [IsMember]
 
@@ -98,17 +105,20 @@ class MyHolidaysView(generics.ListAPIView):
 
 class MemberHolidayCreateView(generics.CreateAPIView):
     """POST /api/v1/member/holidays/create/ — create a holiday."""
+
     serializer_class = HolidaySerializer
     permission_classes = [IsMember]
 
     def perform_create(self, serializer):
         serializer.save()
         from apps.devices.tasks import sync_holidays_to_devices
+
         sync_holidays_to_devices.delay()
 
 
 class MemberHolidayDeleteView(generics.DestroyAPIView):
     """DELETE /api/v1/member/holidays/<id>/ — delete a holiday."""
+
     serializer_class = HolidaySerializer
     permission_classes = [IsMember]
     queryset = Holiday.objects.all()
@@ -116,36 +126,41 @@ class MemberHolidayDeleteView(generics.DestroyAPIView):
     def perform_destroy(self, instance):
         instance.delete()
         from apps.devices.tasks import sync_holidays_to_devices
+
         sync_holidays_to_devices.delay()
 
 
 class MemberTodaySilentView(APIView):
     """POST /api/v1/member/holidays/today-silent/ — silence all devices today."""
+
     permission_classes = [IsMember]
 
     def post(self, request):
-        device_ids = list(
-            Device.objects.filter(owner=request.user, status="active")
-            .values_list("id", flat=True)
-        )
+        device_ids = list(Device.objects.filter(owner=request.user, status="active").values_list("id", flat=True))
         if not device_ids:
             return Response({"detail": "No active devices"}, status=status.HTTP_404_NOT_FOUND)
 
         from apps.devices.tasks import broadcast_emergency_command
+
         broadcast_emergency_command.delay(device_ids, {"command": "silent", "state": True})
         return Response({"queued": len(device_ids)}, status=status.HTTP_202_ACCEPTED)
 
 
 class MyBellLogsView(generics.ListAPIView):
     """GET /api/v1/member/bell-logs/ — bell logs for current user's devices."""
+
     serializer_class = BellLogSerializer
     permission_classes = [IsMember]
 
     def get_queryset(self):
-        return BellLog.objects.filter(
-            device__owner=self.request.user,
-            rang_at__gte=timezone.now() - timedelta(days=30),
-        ).select_related("device").order_by("-rang_at")
+        return (
+            BellLog.objects.filter(
+                device__owner=self.request.user,
+                rang_at__gte=timezone.now() - timedelta(days=30),
+            )
+            .select_related("device")
+            .order_by("-rang_at")
+        )
 
 
 class MyAlertsView(generics.ListAPIView):
@@ -153,18 +168,24 @@ class MyAlertsView(generics.ListAPIView):
 
     Dashboard uses this to show badges like "RTC ⚠️ Batareya zaiflashgan".
     """
+
     serializer_class = DeviceAlertSerializer
     permission_classes = [IsMember]
 
     def get_queryset(self):
-        return DeviceAlert.objects.filter(
-            device__owner=self.request.user,
-            resolved=False,
-        ).select_related("device").order_by("-created_at")
+        return (
+            DeviceAlert.objects.filter(
+                device__owner=self.request.user,
+                resolved=False,
+            )
+            .select_related("device")
+            .order_by("-created_at")
+        )
 
 
 class MemberAlertResolveView(APIView):
     """POST /api/v1/member/alerts/<id>/resolve/ — resolve an alert."""
+
     permission_classes = [IsMember]
 
     def post(self, request, pk=None):
@@ -180,6 +201,7 @@ class MemberAlertResolveView(APIView):
 
 class MemberDeviceRingView(APIView):
     """POST /api/v1/member/devices/<device_id>/ring/ — ring own device."""
+
     permission_classes = [IsMember]
 
     def post(self, request, device_id=None):
@@ -197,11 +219,14 @@ class MemberDeviceRingView(APIView):
         msg_id = mqtt_publisher.ring(device.device_id, duration)
         if msg_id:
             return Response({"status": "success", "duration": duration, "msg_id": msg_id})
-        return Response({"status": "error", "message": "Failed to send ring command"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response(
+            {"status": "error", "message": "Failed to send ring command"}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
 
 
 class MemberDeviceEmergencyView(APIView):
     """POST /api/v1/member/devices/<device_id>/emergency/ — trigger emergency on own device."""
+
     permission_classes = [IsMember]
 
     def post(self, request, device_id=None):
@@ -227,33 +252,37 @@ class MemberDeviceEmergencyView(APIView):
 
 class CommandStatusView(APIView):
     """GET /api/v1/member/commands/<msg_id>/status/ — get command delivery status."""
+
     permission_classes = [IsMember]
 
     def get(self, request, msg_id=None):
         from apps.devices.models.command_log import CommandLog
+
         try:
             cmd = CommandLog.objects.get(msg_id=msg_id, device__owner=request.user)
         except CommandLog.DoesNotExist:
             return Response({"detail": "Command not found"}, status=status.HTTP_404_NOT_FOUND)
-        return Response({
-            "msg_id": str(cmd.msg_id),
-            "status": cmd.status,
-            "command_type": cmd.command_type,
-            "sent_at": cmd.sent_at,
-            "acked_at": cmd.acked_at,
-            "error_message": cmd.error_message,
-        })
+        return Response(
+            {
+                "msg_id": str(cmd.msg_id),
+                "status": cmd.status,
+                "command_type": cmd.command_type,
+                "sent_at": cmd.sent_at,
+                "acked_at": cmd.acked_at,
+                "error_message": cmd.error_message,
+            }
+        )
 
 
 class RecentCommandsView(APIView):
     """GET /api/v1/member/commands/recent/ — last 10 commands for user's devices."""
+
     permission_classes = [IsMember]
 
     def get(self, request):
         from apps.devices.models.command_log import CommandLog
-        cmds = CommandLog.objects.filter(
-            device__owner=request.user
-        ).order_by("-sent_at")[:10]
+
+        cmds = CommandLog.objects.filter(device__owner=request.user).order_by("-sent_at")[:10]
         data = [
             {
                 "msg_id": str(c.msg_id),

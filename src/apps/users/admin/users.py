@@ -29,7 +29,14 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):  # type:ignore[misc]
     change_password_form = AdminPasswordChangeForm
     add_form = UserCreationForm
     form = UserChangeForm
-    list_display = ("avatars", "username", "organization_name", "show_role_customized_color", "show_verified_status", "is_active")
+    list_display = (
+        "avatars",
+        "username",
+        "organization_name",
+        "show_role_customized_color",
+        "show_verified_status",
+        "is_active",
+    )
     search_fields = ("email", "username", "first_name", "last_name", "organization_name")
     list_filter = (
         "role",
@@ -40,7 +47,14 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):  # type:ignore[misc]
     list_editable = ("is_active",)
     list_display_links = ("username", "avatars")
     list_filter_submit = True
-    readonly_fields = ("verification_token", "verification_token_expires", "last_login", "date_joined", "created_at", "updated_at")
+    readonly_fields = (
+        "verification_token",
+        "verification_token_expires",
+        "last_login",
+        "date_joined",
+        "created_at",
+        "updated_at",
+    )
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         (

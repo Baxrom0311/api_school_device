@@ -1,17 +1,18 @@
 """
 API v1 URL Configuration for Devices App
 """
-from django.urls import path, include
+
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.devices.api.v1.views import (
+    DeviceLogViewSet,
     DeviceViewSet,
-    ScheduleViewSet,
     FirmwareVersionViewSet,
     OTABatchViewSet,
-    DeviceLogViewSet,
+    ScheduleViewSet,
 )
-from apps.devices.api.v1.views.mqtt_auth import MQTTAuthView, MQTTACLView
+from apps.devices.api.v1.views.mqtt_auth import MQTTACLView, MQTTAuthView
 
 router = DefaultRouter()
 router.register("devices", DeviceViewSet, basename="device")

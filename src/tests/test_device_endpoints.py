@@ -1,4 +1,5 @@
 """Tests for ESP32 device endpoints (auto-register, activate, credentials)."""
+
 import pytest
 from django.contrib.auth.hashers import check_password
 from rest_framework import status
@@ -116,10 +117,13 @@ class TestDeviceActivate:
     def test_full_esp32_flow(self, api_client):
         """Integration: auto-register → admin approves → activate by MAC → get credentials."""
         # Step 1: ESP32 auto-registers
-        resp = api_client.post("/api/v1/device/auto-register/", {
-            "device_id": "AA:BB:CC:DD:EE:FF",
-            "firmware_version": "1.0.0",
-        })
+        resp = api_client.post(
+            "/api/v1/device/auto-register/",
+            {
+                "device_id": "AA:BB:CC:DD:EE:FF",
+                "firmware_version": "1.0.0",
+            },
+        )
         assert resp.status_code == status.HTTP_201_CREATED
         assert resp.data["status"] == "pending"
 

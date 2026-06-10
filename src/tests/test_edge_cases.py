@@ -7,11 +7,13 @@ Covers:
 - Concurrent schedule updates (race condition)
 - Token refresh with blacklisted refresh token
 """
-import pytest
+
 from unittest.mock import patch
+
+import pytest
 from django.contrib.auth import get_user_model
 
-from apps.devices.models import Device, OTABatch, OTABatchDevice, Schedule
+from apps.devices.models import Device, OTABatch, OTABatchDevice
 from apps.devices.models.device import RegistrationStatus
 from apps.devices.models.ota_batch import OTABatchStatus, OTADeviceStatus
 
@@ -24,24 +26,33 @@ class TestDuplicateMACAutoRegister:
 
     def test_invalid_mac_format_rejected(self, api_client):
         """Invalid MAC address format should be rejected."""
-        response = api_client.post("/api/v1/device/auto-register/", {
-            "device_id": "not-a-mac",
-            "firmware_version": "1.0.0",
-        })
+        response = api_client.post(
+            "/api/v1/device/auto-register/",
+            {
+                "device_id": "not-a-mac",
+                "firmware_version": "1.0.0",
+            },
+        )
         assert response.status_code == 400
 
     def test_concurrent_register_same_mac(self, api_client):
         """First register creates device, second returns existing."""
         mac = "AA:BB:CC:DD:EE:11"
         normalized = "AABBCCDDEE11"
-        r1 = api_client.post("/api/v1/device/auto-register/", {
-            "device_id": mac,
-            "firmware_version": "1.0.0",
-        })
-        r2 = api_client.post("/api/v1/device/auto-register/", {
-            "device_id": mac,
-            "firmware_version": "1.0.1",
-        })
+        r1 = api_client.post(
+            "/api/v1/device/auto-register/",
+            {
+                "device_id": mac,
+                "firmware_version": "1.0.0",
+            },
+        )
+        r2 = api_client.post(
+            "/api/v1/device/auto-register/",
+            {
+                "device_id": mac,
+                "firmware_version": "1.0.1",
+            },
+        )
         assert r1.status_code == 201
         assert r2.status_code == 200
         # Only one device in DB
@@ -55,10 +66,13 @@ class TestDuplicateMACAutoRegister:
             firmware_version="1.0.0",
             registration_status=RegistrationStatus.PENDING,
         )
-        response = api_client.post("/api/v1/device/auto-register/", {
-            "device_id": "AA:BB:CC:DD:EE:12",
-            "firmware_version": "1.1.0",
-        })
+        response = api_client.post(
+            "/api/v1/device/auto-register/",
+            {
+                "device_id": "AA:BB:CC:DD:EE:12",
+                "firmware_version": "1.1.0",
+            },
+        )
         assert response.status_code == 200
         device = Device.objects.get(device_id=normalized)
         assert device.firmware_version == "1.1.0"
@@ -71,14 +85,14 @@ class TestOTABatchCancelledMidProcessing:
     @patch("apps.devices.services.mqtt_publisher.MQTTPublisher.send_ota", return_value=True)
     def test_process_cancelled_batch_skips(self, mock_send, db, admin_user):
         """process_ota_batch should return early if batch is cancelled."""
-        from apps.devices.tasks import process_ota_batch
         from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.devices.tasks import process_ota_batch
 
         fw_file = SimpleUploadedFile("fw.bin", b"\x00" * 512)
         from apps.devices.models import FirmwareVersion
-        firmware = FirmwareVersion.objects.create(
-            version="3.0.0", file=fw_file, is_stable=True
-        )
+
+        firmware = FirmwareVersion.objects.create(version="3.0.0", file=fw_file, is_stable=True)
 
         batch = OTABatch.objects.create(
             name="Cancel Test",
@@ -91,9 +105,7 @@ class TestOTABatchCancelledMidProcessing:
             device_id="CA:NC:EL:D0:00:01",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        OTABatchDevice.objects.create(
-            batch=batch, device=d1, status=OTADeviceStatus.PENDING
-        )
+        OTABatchDevice.objects.create(batch=batch, device=d1, status=OTADeviceStatus.PENDING)
 
         result = process_ota_batch(batch.id)
         assert result["status"] == "cancelled"
@@ -139,24 +151,28 @@ class TestTokenRefreshBlacklisted:
     def test_refresh_with_used_token(self, api_client, regular_user):
         """After logout (blacklist), refresh should fail."""
         # Login to get tokens
-        login_resp = api_client.post("/api/v1/auth/login/", {
-            "email": "user@test.com",
-            "password": "testpass123",
-        })
+        login_resp = api_client.post(
+            "/api/v1/auth/login/",
+            {
+                "email": "user@test.com",
+                "password": "testpass123",
+            },
+        )
         assert login_resp.status_code == 200
         refresh_token = login_resp.data["refresh"]
 
         # Logout (blacklists the refresh token)
-        api_client.credentials(
-            HTTP_AUTHORIZATION=f"Bearer {login_resp.data['access']}"
-        )
+        api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_resp.data['access']}")
         api_client.post("/api/v1/auth/logout/", {"refresh": refresh_token})
 
         # Try to use blacklisted refresh token
         api_client.credentials()  # Clear auth
-        response = api_client.post("/api/v1/auth/refresh/", {
-            "refresh": refresh_token,
-        })
+        response = api_client.post(
+            "/api/v1/auth/refresh/",
+            {
+                "refresh": refresh_token,
+            },
+        )
         assert response.status_code == 401
 
 
@@ -166,16 +182,16 @@ class TestCheckOTACompletion:
 
     def test_check_all_batches_inline(self, db, admin_user):
         """When batch_id=None, all active batches are processed inline."""
-        from apps.devices.tasks import check_ota_completion
-        from apps.devices.models import FirmwareVersion
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        from django.utils import timezone
         from datetime import timedelta
 
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.utils import timezone
+
+        from apps.devices.models import FirmwareVersion
+        from apps.devices.tasks import check_ota_completion
+
         fw_file = SimpleUploadedFile("fw.bin", b"\x00" * 512)
-        firmware = FirmwareVersion.objects.create(
-            version="4.0.0", file=fw_file, is_stable=True
-        )
+        firmware = FirmwareVersion.objects.create(version="4.0.0", file=fw_file, is_stable=True)
 
         batch = OTABatch.objects.create(
             name="Timeout Test",
@@ -204,16 +220,16 @@ class TestCheckOTACompletion:
 
     def test_check_specific_batch(self, db, admin_user):
         """When batch_id is given, only that batch is checked."""
-        from apps.devices.tasks import check_ota_completion
-        from apps.devices.models import FirmwareVersion
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        from django.utils import timezone
         from datetime import timedelta
 
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.utils import timezone
+
+        from apps.devices.models import FirmwareVersion
+        from apps.devices.tasks import check_ota_completion
+
         fw_file = SimpleUploadedFile("fw.bin", b"\x00" * 512)
-        firmware = FirmwareVersion.objects.create(
-            version="4.1.0", file=fw_file, is_stable=True
-        )
+        firmware = FirmwareVersion.objects.create(version="4.1.0", file=fw_file, is_stable=True)
 
         batch = OTABatch.objects.create(
             name="Specific Batch",

@@ -38,4 +38,3 @@ if not settings.DEBUG:
     handler500 = custom_handler500
     handler403 = custom_handler403
     handler400 = custom_handler400
-

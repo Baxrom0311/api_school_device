@@ -1,6 +1,6 @@
 """iCal parser service — extracts bell times from iCal content."""
+
 import re
-from datetime import datetime
 
 
 def parse_ical_to_times(ical_content: bytes | str) -> list[str]:

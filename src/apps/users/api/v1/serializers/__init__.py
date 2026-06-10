@@ -1,19 +1,19 @@
 from apps.users.api.v1.serializers.auth import (
-    LoginSerializer,
-    UserSerializer,
-    TokenResponseSerializer,
-    RefreshTokenSerializer,
-    LogoutSerializer,
-    RegisterSerializer,
-    VerifyEmailSerializer,
-    ResendVerificationSerializer,
     ChangePasswordSerializer,
+    LoginSerializer,
+    LogoutSerializer,
+    RefreshTokenSerializer,
+    RegisterSerializer,
+    ResendVerificationSerializer,
+    TokenResponseSerializer,
+    UserSerializer,
+    VerifyEmailSerializer,
 )
 from apps.users.api.v1.serializers.users import (
-    AdminUserListSerializer,
-    AdminUserDetailSerializer,
-    AdminUserUpdateSerializer,
     AdminSetPasswordSerializer,
+    AdminUserDetailSerializer,
+    AdminUserListSerializer,
+    AdminUserUpdateSerializer,
 )
 
 __all__ = [

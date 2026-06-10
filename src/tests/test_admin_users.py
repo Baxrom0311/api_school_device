@@ -1,4 +1,5 @@
 """Tests for admin user management endpoints."""
+
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -76,6 +77,7 @@ class TestAdminUserDetail:
 
     def test_nonexistent_user(self, admin_client):
         import uuid
+
         response = admin_client.get(f"/api/v1/admin/users/{uuid.uuid4()}/")
         assert response.status_code == 404
 
@@ -91,10 +93,13 @@ class TestAdminSetPassword:
         assert response.status_code == 200
 
         # Verify new password works
-        login = api_client.post("/api/v1/auth/login/", {
-            "email": "user@test.com",
-            "password": "adminsetpass123",
-        })
+        login = api_client.post(
+            "/api/v1/auth/login/",
+            {
+                "email": "user@test.com",
+                "password": "adminsetpass123",
+            },
+        )
         assert login.status_code == 200
 
     def test_user_cannot_set_password(self, user_client, admin_user):

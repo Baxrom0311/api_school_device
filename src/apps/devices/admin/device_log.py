@@ -16,7 +16,8 @@ class DeviceLogAdmin(ModelAdmin):
 
     def short_message(self, obj):
         return obj.message[:80] if obj.message else ""
-    short_message.short_description = _("Message")
+
+    short_message.short_description = _("Message")  # type: ignore[attr-defined]
 
     def has_add_permission(self, request):
         return False

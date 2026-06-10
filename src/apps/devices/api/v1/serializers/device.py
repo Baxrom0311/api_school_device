@@ -9,9 +9,11 @@ WHY multiple serializers:
 5. Credentials serializer for IoT developers
 6. API Key serializer for device provisioning
 """
+
 import os
-from rest_framework import serializers
+
 from django.utils.translation import gettext_lazy as _
+from rest_framework import serializers
 
 from apps.devices.models import Device, Schedule
 
@@ -19,10 +21,11 @@ from apps.devices.models import Device, Schedule
 class DeviceAPIKeySerializer(serializers.ModelSerializer):
     """
     Serializer for device API key (for provisioning/sales).
-    
+
     Shows API key which is used for device authentication.
     Each sold device gets a unique API key.
     """
+
     class Meta:
         model = Device
         fields = [
@@ -38,17 +41,18 @@ class DeviceAPIKeySerializer(serializers.ModelSerializer):
 class DeviceCredentialsSerializer(serializers.ModelSerializer):
     """
     Serializer for IoT device credentials.
-    
+
     Used by IoT developers and Frontend to get MQTT connection details.
     mqtt_password is only shown as raw value on creation/regeneration
     (via _raw_mqtt_password attribute). Otherwise shows "***" placeholder.
     """
+
     mqtt_broker = serializers.SerializerMethodField()
     mqtt_port = serializers.SerializerMethodField()
     mqtt_use_tls = serializers.SerializerMethodField()
     mqtt_password = serializers.SerializerMethodField()
     topics = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Device
         fields = [
@@ -65,23 +69,23 @@ class DeviceCredentialsSerializer(serializers.ModelSerializer):
             "topics",
         ]
         read_only_fields = ["api_key", "mqtt_username", "mqtt_password", "registration_status"]
-    
+
     def get_mqtt_password(self, obj) -> str:
         # Return raw password only if available (just created/regenerated)
-        raw = getattr(obj, '_raw_mqtt_password', None)
+        raw = getattr(obj, "_raw_mqtt_password", None)
         if raw:
             return raw
         return "***"
-    
+
     def get_mqtt_broker(self, obj) -> str:
         return os.getenv("MQTT_BROKER_HOST", "localhost")
-    
+
     def get_mqtt_port(self, obj) -> int:
         return int(os.getenv("MQTT_BROKER_PORT", "1883"))
-    
+
     def get_mqtt_use_tls(self, obj) -> bool:
         return os.getenv("MQTT_USE_TLS", "false").lower() == "true"
-    
+
     def get_topics(self, obj) -> dict:
         return {
             "command": f"devices/{obj.device_id}/command",
@@ -94,18 +98,35 @@ class DeviceCredentialsSerializer(serializers.ModelSerializer):
 
 class ScheduleNestedSerializer(serializers.ModelSerializer):
     """Minimal schedule info for device list/detail"""
+
     times_count = serializers.IntegerField(read_only=True)
     device_id = serializers.CharField(source="device.device_id", read_only=True)
     device_name = serializers.CharField(source="device.school_name", read_only=True)
-    
+
     class Meta:
         model = Schedule
-        fields = ["id", "device", "device_id", "device_name", "times", "times_count", "days_mask", "bell_duration", "is_active", "timezone", "version", "synced_at", "sync_pending", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "device",
+            "device_id",
+            "device_name",
+            "times",
+            "times_count",
+            "days_mask",
+            "bell_duration",
+            "is_active",
+            "timezone",
+            "version",
+            "synced_at",
+            "sync_pending",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class DeviceSerializer(serializers.ModelSerializer):
     """Base device serializer"""
-    
+
     class Meta:
         model = Device
         fields = [
@@ -128,14 +149,15 @@ class DeviceSerializer(serializers.ModelSerializer):
 class DeviceListSerializer(serializers.ModelSerializer):
     """
     Minimal serializer for list views.
-    
+
     WHY: Loading 10K devices with all fields is slow.
     This returns only what's needed for a dashboard/table.
     """
+
     has_schedule = serializers.SerializerMethodField()
     rtc_battery_dead = serializers.SerializerMethodField()
     schedule_stale = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Device
         fields = [
@@ -160,7 +182,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-    
+
     def get_has_schedule(self, obj) -> bool:
         return hasattr(obj, "schedule")
 
@@ -177,6 +199,7 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
     Full serializer for detail views.
     Includes nested schedule, diagnostic info, and registration status.
     """
+
     schedule = ScheduleNestedSerializer(read_only=True)
     needs_ota_update = serializers.BooleanField(read_only=True)
     target_firmware_version = serializers.CharField(
@@ -187,7 +210,7 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
     is_registered = serializers.BooleanField(read_only=True)
     rtc_battery_dead = serializers.SerializerMethodField()
     schedule_stale = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Device
         fields = [
@@ -254,11 +277,11 @@ class DeviceDetailSerializer(serializers.ModelSerializer):
 class DeviceCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating new devices.
-    
+
     WHY separate: Device creation has specific validation,
     and we may want to auto-generate MQTT credentials.
     """
-    
+
     class Meta:
         model = Device
         fields = [
@@ -268,44 +291,41 @@ class DeviceCreateSerializer(serializers.ModelSerializer):
             "description",
             "status",
         ]
-    
+
     def validate_device_id(self, value):
         """Ensure device_id is unique and normalize MAC format."""
         import re
-        normalized = re.sub(r'[:\-]', '', value.strip()).upper()
-        if re.fullmatch(r'[0-9A-F]{12}', normalized):
+
+        normalized = re.sub(r"[:\-]", "", value.strip()).upper()
+        if re.fullmatch(r"[0-9A-F]{12}", normalized):
             value = normalized
         if Device.objects.filter(device_id=value).exists():
-            raise serializers.ValidationError(
-                _("Device with this ID already exists")
-            )
+            raise serializers.ValidationError(_("Device with this ID already exists"))
         return value
-    
+
 
 class DeviceBulkActionSerializer(serializers.Serializer):
     """Serializer for bulk device actions"""
+
     device_ids = serializers.ListField(
         child=serializers.UUIDField(),
         min_length=1,
         max_length=100,
         help_text=_("List of device IDs to perform action on"),
     )
-    
+
     def validate_device_ids(self, value):
         """Verify all device IDs exist"""
-        existing = set(
-            Device.objects.filter(id__in=value).values_list("id", flat=True)
-        )
+        existing = set(Device.objects.filter(id__in=value).values_list("id", flat=True))
         missing = set(value) - existing
         if missing:
-            raise serializers.ValidationError(
-                f"Devices not found: {list(missing)}"
-            )
+            raise serializers.ValidationError(f"Devices not found: {list(missing)}")
         return value
 
 
 class DeviceRingSerializer(serializers.Serializer):
     """Serializer for ring command"""
+
     duration = serializers.IntegerField(
         min_value=1,
         max_value=60,
@@ -316,6 +336,7 @@ class DeviceRingSerializer(serializers.Serializer):
 
 class DeviceBulkOTASerializer(serializers.Serializer):
     """Serializer for bulk OTA update"""
+
     device_ids = serializers.ListField(
         child=serializers.UUIDField(),
         min_length=1,
@@ -333,6 +354,7 @@ class DeviceBulkOTASerializer(serializers.Serializer):
 
 class DeviceStatsSerializer(serializers.Serializer):
     """Serializer for device statistics response"""
+
     total_devices = serializers.IntegerField()
     registered_devices = serializers.IntegerField()
     pending_devices = serializers.IntegerField()
@@ -345,12 +367,14 @@ class DeviceStatsSerializer(serializers.Serializer):
 
 # ============== Auto-Registration Serializers ==============
 
+
 class DeviceAutoRegisterSerializer(serializers.Serializer):
     """
     Serializer for ESP32 auto-registration request.
-    
+
     ESP32 sends its MAC address, backend creates/returns device.
     """
+
     device_id = serializers.CharField(
         max_length=17,
         help_text=_("Device MAC address (hex, with or without separators)"),
@@ -370,14 +394,16 @@ class DeviceAutoRegisterSerializer(serializers.Serializer):
 
     def validate_device_id(self, value: str) -> str:
         import re
-        normalized = re.sub(r'[:\-]', '', value).upper()
-        if not re.fullmatch(r'[0-9A-F]{12}', normalized):
+
+        normalized = re.sub(r"[:\-]", "", value).upper()
+        if not re.fullmatch(r"[0-9A-F]{12}", normalized):
             raise serializers.ValidationError("Invalid MAC address format.")
         return normalized
 
 
 class DeviceAutoRegisterResponseSerializer(serializers.Serializer):
     """Response for auto-registration"""
+
     status = serializers.CharField()
     message = serializers.CharField()
     device_id = serializers.CharField()
@@ -389,9 +415,10 @@ class DeviceAutoRegisterResponseSerializer(serializers.Serializer):
 class DeviceApproveSerializer(serializers.Serializer):
     """
     Serializer for admin to approve a pending device.
-    
+
     Admin provides school info when approving.
     """
+
     school_name = serializers.CharField(
         max_length=255,
         help_text=_("Name of the school"),
@@ -413,12 +440,13 @@ class DeviceApproveSerializer(serializers.Serializer):
 class DeviceClaimSerializer(serializers.Serializer):
     """
     Serializer for user to claim a device by MAC address.
-    
+
     User provides MAC address and optional device name.
     Device must exist and be unregistered.
-    
+
     IMPORTANT: Each user can only have ONE device.
     """
+
     device_id = serializers.CharField(
         max_length=64,
         help_text=_("Device MAC address (from sticker on device)"),
@@ -435,22 +463,20 @@ class DeviceClaimSerializer(serializers.Serializer):
         """Check if device exists and is unregistered"""
         # Normalize MAC address (remove colons, uppercase)
         normalized = value.replace(":", "").replace("-", "").upper()
-        
+
         try:
-            device = Device.objects.get(device_id__iexact=value) 
+            device = Device.objects.get(device_id__iexact=value)
         except Device.DoesNotExist:
             try:
                 device = Device.objects.get(device_id__iexact=normalized)
-            except Device.DoesNotExist:
+            except Device.DoesNotExist as exc:
                 raise serializers.ValidationError(
                     _("Qurilma topilmadi. MAC address to'g'ri kiritilganini tekshiring.")
-                )
-        
+                ) from exc
+
         if device.registration_status == "registered":
-            raise serializers.ValidationError(
-                _("Bu qurilma allaqachon ro'yxatdan o'tgan.")
-            )
-        
+            raise serializers.ValidationError(_("Bu qurilma allaqachon ro'yxatdan o'tgan."))
+
         return device.device_id
 
     def claim(self, user):
@@ -460,9 +486,14 @@ class DeviceClaimSerializer(serializers.Serializer):
         with transaction.atomic():
             # Check if user already has a device
             if Device.objects.filter(owner=user).exists():
-                raise serializers.ValidationError({
-                    "device_id": _("Sizda allaqachon qurilma mavjud. Har bir foydalanuvchi faqat bitta qurilmaga ega bo'lishi mumkin.")
-                })
+                raise serializers.ValidationError(
+                    {
+                        "device_id": _(
+                            "Sizda allaqachon qurilma mavjud. "
+                            "Har bir foydalanuvchi faqat bitta qurilmaga ega bo'lishi mumkin."
+                        )
+                    }
+                )
 
             device_id = self.validated_data["device_id"]
             device_name = self.validated_data.get("device_name", "")
@@ -470,9 +501,7 @@ class DeviceClaimSerializer(serializers.Serializer):
             device = Device.objects.select_for_update().get(device_id=device_id)
 
             if device.registration_status == "registered":
-                raise serializers.ValidationError({
-                    "device_id": _("Bu qurilma allaqachon ro'yxatdan o'tgan.")
-                })
+                raise serializers.ValidationError({"device_id": _("Bu qurilma allaqachon ro'yxatdan o'tgan.")})
 
             device.register_device(owner=user, device_name=device_name)
 
@@ -481,8 +510,9 @@ class DeviceClaimSerializer(serializers.Serializer):
 
 class DeviceClaimResponseSerializer(serializers.ModelSerializer):
     """Response for device claim"""
+
     owner_email = serializers.EmailField(source="owner.email", read_only=True)
-    
+
     class Meta:
         model = Device
         fields = [

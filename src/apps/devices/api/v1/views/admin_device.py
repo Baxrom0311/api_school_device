@@ -3,6 +3,7 @@
 The legacy DeviceViewSet has mixed permissions (some AllowAny for ESP32).
 This subclass ensures the /api/v1/admin/ path is always admin-only.
 """
+
 from apps.devices.api.v1.views.device import DeviceViewSet
 from apps.shared.permissions import IsSuperAdmin
 

@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from drf_spectacular.utils import extend_schema, OpenApiResponse
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -11,14 +11,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.users.api.v1.serializers import (
+    ChangePasswordSerializer,
     LoginSerializer,
-    UserSerializer,
-    TokenResponseSerializer,
     LogoutSerializer,
     RegisterSerializer,
-    VerifyEmailSerializer,
     ResendVerificationSerializer,
-    ChangePasswordSerializer,
+    TokenResponseSerializer,
+    UserSerializer,
+    VerifyEmailSerializer,
 )
 
 User = get_user_model()
@@ -160,6 +160,7 @@ class RegisterView(APIView):
 
         # Send verification email
         from apps.users.utils import send_verification_email
+
         send_verification_email(user.email, user.verification_token)
 
         response_data = {
@@ -170,6 +171,7 @@ class RegisterView(APIView):
 
         # Only include token in DEBUG mode
         from django.conf import settings
+
         if settings.DEBUG:
             response_data["verification_token"] = user.verification_token
 
@@ -232,10 +234,11 @@ class ResendVerificationView(APIView):
         serializer = ResendVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = getattr(serializer, '_user', None)
+        user = getattr(serializer, "_user", None)
         if user:
             user.resend_verification_token()
             from apps.users.utils import send_verification_email
+
             send_verification_email(user.email, user.verification_token)
 
         return Response(

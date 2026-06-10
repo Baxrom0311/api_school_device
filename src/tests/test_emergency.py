@@ -2,12 +2,13 @@
 Tests for Emergency endpoints: ring-all, lockdown, cancel, alert filtering.
 Updated for async Celery-based broadcast and rate limiting.
 """
-import pytest
+
 from unittest.mock import patch
+
+import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
-from apps.devices.models import Device
 from apps.devices.models.device_alert import DeviceAlert
 
 
@@ -155,9 +156,7 @@ class TestEmergencyAlertList:
 
     def test_filter_by_resolved(self, admin_client, device):
         DeviceAlert.objects.create(device=device, alert_type="panic", resolved=False)
-        DeviceAlert.objects.create(
-            alert_type="lockdown", resolved=True, resolved_at=timezone.now()
-        )
+        DeviceAlert.objects.create(alert_type="lockdown", resolved=True, resolved_at=timezone.now())
 
         resp = admin_client.get("/api/v1/admin/emergency/?resolved=false")
         assert resp.status_code == 200

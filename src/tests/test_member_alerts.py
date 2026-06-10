@@ -1,8 +1,9 @@
 """Tests for member alerts endpoint and consecutive RTC drift detection."""
+
 import json
+from unittest.mock import MagicMock
+
 import pytest
-from datetime import timedelta
-from unittest.mock import MagicMock, patch
 from django.utils import timezone
 
 from apps.devices.models import Device

@@ -3,21 +3,21 @@ Integration tests for MQTT listener handlers.
 
 Tests the message handling logic (alert, bell_log, heartbeat) with mocked paho client.
 """
-import json
-import pytest
-from datetime import timedelta
-from unittest.mock import MagicMock, patch
-from django.utils import timezone
 
-from apps.devices.models import Device
-from apps.devices.models.device_alert import DeviceAlert
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from apps.devices.models.bell_log import BellLog
+from apps.devices.models.device_alert import DeviceAlert
 
 
 @pytest.fixture
 def mqtt_listener():
     """Create MQTTListener instance without connecting."""
     from apps.devices.services.mqtt_listener import MQTTListener
+
     listener = MQTTListener()
     return listener
 
@@ -50,6 +50,7 @@ class TestMQTTBellLogHandler:
     @pytest.fixture(autouse=True)
     def clear_cache(self):
         from django.core.cache import cache
+
         cache.clear()
         yield
         cache.clear()

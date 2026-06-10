@@ -1,11 +1,11 @@
 """Tests for Schedule Template CRUD, apply, and iCal import endpoints."""
-import pytest
+
 from io import BytesIO
 from unittest.mock import patch
 
+import pytest
 from rest_framework import status
 
-from apps.devices.models import Schedule
 from apps.devices.models.schedule_template import ScheduleTemplate
 
 
@@ -31,11 +31,15 @@ class TestScheduleTemplateCreate:
     url = "/api/v1/admin/schedule-templates/"
 
     def test_create_template(self, admin_client):
-        resp = admin_client.post(self.url, {
-            "name": "Custom",
-            "times": ["07:30", "08:15", "09:00"],
-            "description": "Custom schedule",
-        }, format="json")
+        resp = admin_client.post(
+            self.url,
+            {
+                "name": "Custom",
+                "times": ["07:30", "08:15", "09:00"],
+                "description": "Custom schedule",
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_201_CREATED
         assert ScheduleTemplate.objects.filter(name="Custom").exists()
 
@@ -156,18 +160,17 @@ class TestImportIcalUrl:
 
     @patch("apps.devices.services.url_validator.safe_fetch")
     def test_import_from_url(self, mock_fetch, admin_client, device):
-        ical_content = (
-            b"BEGIN:VCALENDAR\r\n"
-            b"BEGIN:VEVENT\r\nDTSTART:20240101T140000\r\nEND:VEVENT\r\n"
-            b"END:VCALENDAR\r\n"
-        )
+        ical_content = b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20240101T140000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
         mock_fetch.return_value = (ical_content, None)
 
         schedule = device.schedule
-        resp = admin_client.post(self.url, {
-            "url": "https://example.com/cal.ics",
-            "schedule_id": str(schedule.id),
-        })
+        resp = admin_client.post(
+            self.url,
+            {
+                "url": "https://example.com/cal.ics",
+                "schedule_id": str(schedule.id),
+            },
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert "14:00" in resp.data["times"]
 
@@ -175,26 +178,35 @@ class TestImportIcalUrl:
     def test_blocks_redirect(self, mock_fetch, admin_client, device):
         mock_fetch.return_value = (None, "Redirects are not allowed")
 
-        resp = admin_client.post(self.url, {
-            "url": "https://evil.com/cal.ics",
-            "schedule_id": str(device.schedule.id),
-        })
+        resp = admin_client.post(
+            self.url,
+            {
+                "url": "https://evil.com/cal.ics",
+                "schedule_id": str(device.schedule.id),
+            },
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "Redirect" in resp.data["error"]
 
     def test_rejects_http_url(self, admin_client, device):
-        resp = admin_client.post(self.url, {
-            "url": "http://example.com/cal.ics",
-            "schedule_id": str(device.schedule.id),
-        })
+        resp = admin_client.post(
+            self.url,
+            {
+                "url": "http://example.com/cal.ics",
+                "schedule_id": str(device.schedule.id),
+            },
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "HTTPS" in resp.data["error"]
 
     def test_rejects_private_ip(self, admin_client, device):
-        resp = admin_client.post(self.url, {
-            "url": "https://192.168.1.1/cal.ics",
-            "schedule_id": str(device.schedule.id),
-        })
+        resp = admin_client.post(
+            self.url,
+            {
+                "url": "https://192.168.1.1/cal.ics",
+                "schedule_id": str(device.schedule.id),
+            },
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_missing_params(self, admin_client):

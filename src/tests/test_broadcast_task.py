@@ -1,6 +1,8 @@
 """Tests for broadcast_emergency_command Celery task logic."""
-import pytest
+
 from unittest.mock import patch
+
+import pytest
 
 from apps.devices.models import Device
 from apps.devices.tasks import broadcast_emergency_command

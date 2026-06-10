@@ -1,6 +1,6 @@
 """Tests for device schedule HTTP endpoint (ESP32 fetches schedule)."""
+
 import pytest
-from django.utils import timezone
 
 from apps.devices.models import Device, Schedule
 from apps.devices.models.device import RegistrationStatus
@@ -18,9 +18,7 @@ class TestDeviceScheduleEndpoint:
             school_name="Test School",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        Schedule.objects.filter(device=device).update(
-            times=["08:00", "12:30", "17:00"], version=5
-        )
+        Schedule.objects.filter(device=device).update(times=["08:00", "12:30", "17:00"], version=5)
 
         resp = api_client.get(self.URL, {"device_id": "AABBCCDDEEFF"})
 
@@ -37,9 +35,7 @@ class TestDeviceScheduleEndpoint:
             school_name="Sync School",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        Schedule.objects.filter(device=device).update(
-            times=["09:00"], version=2, sync_pending=True
-        )
+        Schedule.objects.filter(device=device).update(times=["09:00"], version=2, sync_pending=True)
 
         api_client.get(self.URL, {"device_id": "SYNC_HTTP_01"})
 
@@ -86,9 +82,7 @@ class TestDeviceScheduleEndpoint:
             school_name="MAC Test",
             registration_status=RegistrationStatus.REGISTERED,
         )
-        Schedule.objects.filter(device__device_id="AABBCCDDEEFF").update(
-            times=["10:00"], version=1
-        )
+        Schedule.objects.filter(device__device_id="AABBCCDDEEFF").update(times=["10:00"], version=1)
 
         resp = api_client.get(self.URL, {"device_id": "AA:BB:CC:DD:EE:FF"})
 

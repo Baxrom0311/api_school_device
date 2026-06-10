@@ -11,13 +11,14 @@ Task Categories:
 2. Schedule Sync - sync_pending_schedules
 3. Reports - generate_daily_report
 """
+
 import logging
 from datetime import timedelta
-from typing import Optional
 
 from celery import shared_task
 from django.db import OperationalError, transaction
-from django.db.models import F, Q as models_Q
+from django.db.models import F
+from django.db.models import Q as models_Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def broadcast_emergency_command(self, device_ids: list[int], payload: dict, chun
 
     device_list = list(devices)
     for i in range(0, len(device_list), chunk_size):
-        chunk = device_list[i:i + chunk_size]
+        chunk = device_list[i : i + chunk_size]
         for device_id in chunk:
             if mqtt_publisher.send_to_device(device_id, payload):
                 success += 1
@@ -129,6 +130,7 @@ def send_bulk_restart(self, device_ids: list[int]) -> dict:
 
 # ============ OTA Processing Tasks ============
 
+
 @shared_task(
     bind=True,
     max_retries=3,
@@ -142,23 +144,23 @@ def send_bulk_restart(self, device_ids: list[int]) -> dict:
 def process_ota_batch(self, batch_id: int) -> dict:
     """
     Process OTA batch with throttling.
-    
+
     WHY this design:
     1. Rate limiting: devices_per_hour setting
     2. Processes in chunks, re-schedules itself
     3. Handles failures gracefully
     4. Updates progress in real-time
-    
+
     Args:
         batch_id: OTA batch to process
-        
+
     Returns:
         Dict with processing results
     """
     from apps.devices.models import OTABatch, OTABatchDevice
     from apps.devices.models.ota_batch import OTABatchStatus, OTADeviceStatus
     from apps.devices.services import mqtt_publisher
-    
+
     # Use select_for_update to prevent race conditions on concurrent task execution
     with transaction.atomic():
         try:
@@ -166,102 +168,98 @@ def process_ota_batch(self, batch_id: int) -> dict:
         except OTABatch.DoesNotExist:
             logger.error(f"OTA batch {batch_id} not found")
             return {"error": "Batch not found"}
-        
+
         # Check if batch is still active
         if batch.status == OTABatchStatus.CANCELLED:
             logger.info(f"OTA batch {batch_id} was cancelled")
             return {"status": "cancelled"}
-        
+
         if batch.status == OTABatchStatus.COMPLETED:
             logger.info(f"OTA batch {batch_id} already completed")
             return {"status": "already_completed"}
-        
+
         # Mark as in-progress if pending
         if batch.status == OTABatchStatus.PENDING:
             batch.status = OTABatchStatus.IN_PROGRESS
             batch.started_at = timezone.now()
             batch.save(update_fields=["status", "started_at"])
-    
+
     # Calculate chunk size based on rate limit
     # devices_per_hour / 60 minutes * task_interval_minutes
     chunk_size = max(1, batch.devices_per_hour // 6)  # Run every 10 minutes
-    
+
     # Get pending devices
     pending_devices = OTABatchDevice.objects.filter(
         batch=batch,
         status=OTADeviceStatus.PENDING,
     ).select_related("device")[:chunk_size]
-    
+
     if not pending_devices.exists():
         # All devices processed, mark batch complete
         batch.status = OTABatchStatus.COMPLETED
         batch.completed_at = timezone.now()
         batch.save(update_fields=["status", "completed_at"])
-        
+
         logger.info(f"OTA batch {batch_id} completed")
         return {
             "status": "completed",
             "success": batch.success_count,
             "failed": batch.failure_count,
         }
-    
+
     # Process chunk
     firmware_url = batch.firmware.download_url
     processed = 0
-    
+
     for ota_device in pending_devices:
         device = ota_device.device
-        
+
         # Send OTA command (will be delivered when device comes online)
         success = mqtt_publisher.send_ota(device.device_id, firmware_url)
-        
+
         if success:
             ota_device.status = OTADeviceStatus.NOTIFIED
             ota_device.notified_at = timezone.now()
             ota_device.save(update_fields=["status", "notified_at"])
             processed += 1
-            
+
             # Update batch success count atomically
-            OTABatch.objects.filter(id=batch_id).update(
-                success_count=F("success_count") + 1
-            )
-            
+            OTABatch.objects.filter(id=batch_id).update(success_count=F("success_count") + 1)
+
             logger.info(f"OTA sent to {device.device_id} for batch {batch_id}")
         else:
             ota_device.status = OTADeviceStatus.FAILED
             ota_device.error_message = "MQTT publish failed"
             ota_device.save(update_fields=["status", "error_message"])
-            
+
             # Update batch failure count
-            OTABatch.objects.filter(id=batch_id).update(
-                failure_count=F("failure_count") + 1
-            )
-    
+            OTABatch.objects.filter(id=batch_id).update(failure_count=F("failure_count") + 1)
+
     # Schedule next chunk
     remaining = OTABatchDevice.objects.filter(
         batch=batch,
         status=OTADeviceStatus.PENDING,
     ).count()
-    
+
     if remaining > 0:
         # Schedule next run in 10 minutes
         process_ota_batch.apply_async(
             args=[batch_id],
             countdown=600,  # 10 minutes
         )
-        
+
         return {
             "status": "in_progress",
             "processed_this_chunk": processed,
             "remaining": remaining,
         }
-    
+
     # Check for completion
     batch.refresh_from_db()
     batch.status = OTABatchStatus.COMPLETED
     batch.completed_at = timezone.now()
     batch.save(update_fields=["status", "completed_at"])
-    
+
     return {
         "status": "completed",
         "success": batch.success_count,
@@ -278,10 +276,10 @@ def process_ota_batch(self, batch_id: int) -> dict:
     soft_time_limit=120,
     time_limit=150,
 )
-def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: int = 30) -> dict:
+def check_ota_completion(self, batch_id: int | None = None, timeout_minutes: int = 30) -> dict:
     """
     Check if notified devices have completed OTA.
-    
+
     Devices that were notified but haven't reported back
     after timeout are marked as failed.
 
@@ -296,10 +294,7 @@ def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: 
 
     if batch_id is None:
         # Process all in-progress batches inline (no recursive dispatch)
-        active_batch_ids = list(
-            OTABatch.objects.filter(status=OTABatchStatus.IN_PROGRESS)
-            .values_list("id", flat=True)
-        )
+        active_batch_ids = list(OTABatch.objects.filter(status=OTABatchStatus.IN_PROGRESS).values_list("id", flat=True))
         total_timed_out = 0
         for bid in active_batch_ids:
             count = OTABatchDevice.objects.filter(
@@ -312,9 +307,7 @@ def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: 
                 completed_at=timezone.now(),
             )
             if count > 0:
-                OTABatch.objects.filter(id=bid).update(
-                    failure_count=F("failure_count") + count
-                )
+                OTABatch.objects.filter(id=bid).update(failure_count=F("failure_count") + count)
                 total_timed_out += count
         if total_timed_out > 0:
             logger.warning(f"Marked {total_timed_out} devices as OTA timeout across {len(active_batch_ids)} batches")
@@ -336,15 +329,14 @@ def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: 
     )
 
     if count > 0:
-        OTABatch.objects.filter(id=batch_id).update(
-            failure_count=F("failure_count") + count
-        )
+        OTABatch.objects.filter(id=batch_id).update(failure_count=F("failure_count") + count)
         logger.warning(f"Marked {count} devices as OTA timeout in batch {batch_id}")
 
     return {"timed_out": count}
 
 
 # ============ Schedule Sync Tasks ============
+
 
 @shared_task(
     bind=True,
@@ -358,31 +350,31 @@ def check_ota_completion(self, batch_id: Optional[int] = None, timeout_minutes: 
 def sync_pending_schedules(self, max_devices: int = 100) -> dict:
     """
     Sync schedules that are marked as pending.
-    
+
     WHY:
     - Batch processing is more efficient than per-request sync
     - Handles cases where device was offline during API update
     - Runs periodically to catch missed syncs
     - Only syncs to online devices (last_seen within 1 hour)
-    
+
     Args:
         max_devices: Maximum devices to sync in one run
     """
     from apps.devices.models import Schedule
     from apps.devices.services import mqtt_publisher
-    
+
     online_threshold = timezone.now() - timedelta(hours=1)
-    
+
     pending = Schedule.objects.filter(
         sync_pending=True,
         is_active=True,
         device__status="active",
         device__last_seen__gte=online_threshold,
     ).select_related("device")[:max_devices]
-    
+
     success = 0
     failed = 0
-    
+
     for schedule in pending:
         try:
             schedule_kwargs = {"version": schedule.version}
@@ -404,10 +396,10 @@ def sync_pending_schedules(self, max_devices: int = 100) -> dict:
         except Exception as e:
             logger.error(f"Failed to sync schedule for {schedule.device.device_id}: {e}")
             failed += 1
-    
+
     if success > 0:
         logger.info(f"Synced {success} schedules, {failed} failed")
-    
+
     return {"synced": success, "failed": failed}
 
 
@@ -434,13 +426,15 @@ def detect_stale_schedules(self, stale_days: int = 7) -> dict:
 
     threshold = timezone.now() - timedelta(days=stale_days)
 
-    stale_schedules = Schedule.objects.filter(
-        is_active=True,
-        device__status="active",
-        device__registration_status="registered",
-    ).filter(
-        models_Q(synced_at__lt=threshold) | models_Q(synced_at__isnull=True, created_at__lt=threshold)
-    ).select_related("device")
+    stale_schedules = (
+        Schedule.objects.filter(
+            is_active=True,
+            device__status="active",
+            device__registration_status="registered",
+        )
+        .filter(models_Q(synced_at__lt=threshold) | models_Q(synced_at__isnull=True, created_at__lt=threshold))
+        .select_related("device")
+    )
 
     created = 0
     for schedule in stale_schedules:
@@ -536,7 +530,11 @@ def check_rtc_consecutive_drift(self, drift_threshold_sec: int = 300) -> dict:
     if dead_ids:
         logger.warning(f"RTC battery dead: {len(dead_ids)} devices marked, {created} new alerts")
 
-    return {"drifting": drifting.count() if hasattr(drifting, 'count') else len(dead_ids), "newly_dead": len(dead_ids), "alerts_created": created}
+    return {
+        "drifting": drifting.count() if hasattr(drifting, "count") else len(dead_ids),
+        "newly_dead": len(dead_ids),
+        "alerts_created": created,
+    }
 
 
 @shared_task(
@@ -553,7 +551,9 @@ def notify_rtc_battery_dead(self, device_id: int) -> dict:
     Send Telegram notification when a device's RTC battery is detected as dead.
     """
     import os
+
     import requests as http_requests
+
     from apps.devices.models import Device
 
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -599,42 +599,40 @@ def notify_rtc_battery_dead(self, device_id: int) -> dict:
 def generate_daily_report(self) -> dict:
     """
     Generate daily device health report.
-    
+
     WHY:
     - Provides overview for operations team
     - Can be sent via email or Telegram
     - Tracks trends over time
     """
-    from apps.devices.models import Device
     from django.db.models import Count
-    
+
+    from apps.devices.models import Device
+
     today = timezone.now().date()
-    
+
     # Device stats
     total_devices = Device.objects.filter(status="active").count()
-    registered_devices = Device.objects.filter(
-        status="active", 
-        registration_status="registered"
-    ).count()
-    pending_devices = Device.objects.filter(
-        status="active",
-        registration_status="pending"
-    ).count()
+    registered_devices = Device.objects.filter(status="active", registration_status="registered").count()
+    pending_devices = Device.objects.filter(status="active", registration_status="pending").count()
     rtc_errors = Device.objects.filter(status="active", rtc_synced=False).count()
-    rtc_battery_low = Device.objects.filter(
-        status="active", rtc_battery_status__in=["low", "dead"]
-    ).count()
-    
+    rtc_battery_low = Device.objects.filter(status="active", rtc_battery_status__in=["low", "dead"]).count()
+
     # Stale schedules (not synced in 7+ days)
     from apps.devices.models import Schedule
+
     stale_threshold = timezone.now() - timedelta(days=7)
-    stale_schedules = Schedule.objects.filter(
-        is_active=True,
-        device__status="active",
-        device__registration_status="registered",
-    ).filter(
-        models_Q(synced_at__lt=stale_threshold) | models_Q(synced_at__isnull=True, created_at__lt=stale_threshold)
-    ).count()
+    stale_schedules = (
+        Schedule.objects.filter(
+            is_active=True,
+            device__status="active",
+            device__registration_status="registered",
+        )
+        .filter(
+            models_Q(synced_at__lt=stale_threshold) | models_Q(synced_at__isnull=True, created_at__lt=stale_threshold)
+        )
+        .count()
+    )
 
     # Firmware distribution
     firmware_dist = dict(
@@ -643,7 +641,7 @@ def generate_daily_report(self) -> dict:
         .annotate(count=Count("id"))
         .values_list("firmware_version", "count")
     )
-    
+
     report = {
         "date": str(today),
         "total_devices": total_devices,
@@ -654,16 +652,17 @@ def generate_daily_report(self) -> dict:
         "stale_schedules": stale_schedules,
         "firmware_distribution": firmware_dist,
     }
-    
+
     logger.info(f"Daily report: {report}")
-    
+
     # TODO: Send via email/Telegram
     # send_telegram_notification(format_report(report))
-    
+
     return report
 
 
 # ============ Device Health Monitoring Tasks ============
+
 
 @shared_task(
     bind=True,
@@ -683,17 +682,16 @@ def detect_stale_devices(self, threshold_hours: int = 24) -> dict:
     - Marking them allows admins to see which devices need attention
     - Runs periodically via Celery beat
     """
-    from apps.devices.models import Device
     from django.db.models import Q
+
+    from apps.devices.models import Device
 
     threshold = timezone.now() - timedelta(hours=threshold_hours)
 
     stale = Device.objects.filter(
         status="active",
         registration_status="registered",
-    ).filter(
-        Q(last_seen__lt=threshold) | Q(last_seen__isnull=True, created_at__lt=threshold)
-    )
+    ).filter(Q(last_seen__lt=threshold) | Q(last_seen__isnull=True, created_at__lt=threshold))
 
     stale_ids = list(stale.values_list("id", flat=True))
     count = stale.update(status="inactive")
@@ -701,10 +699,8 @@ def detect_stale_devices(self, threshold_hours: int = 24) -> dict:
     # Create offline alerts for newly-stale devices
     if stale_ids:
         from apps.devices.models.device_alert import DeviceAlert
-        alerts = [
-            DeviceAlert(device_id=did, alert_type=DeviceAlert.AlertType.OFFLINE)
-            for did in stale_ids
-        ]
+
+        alerts = [DeviceAlert(device_id=did, alert_type=DeviceAlert.AlertType.OFFLINE) for did in stale_ids]
         DeviceAlert.objects.bulk_create(alerts, ignore_conflicts=True)
 
     if count > 0:
@@ -713,22 +709,23 @@ def detect_stale_devices(self, threshold_hours: int = 24) -> dict:
     # Update Prometheus gauge
     try:
         from apps.shared.middlewares.prometheus import DEVICE_ONLINE_COUNT, OTA_BATCH_PROGRESS
+
         online = Device.objects.filter(status="active", registration_status="registered").count()
         DEVICE_ONLINE_COUNT.set(online)
 
-        from apps.devices.models.ota_batch import OTABatchStatus
         from apps.devices.models import OTABatch
+        from apps.devices.models.ota_batch import OTABatchStatus
+
         in_progress = OTABatch.objects.filter(status=OTABatchStatus.IN_PROGRESS).count()
         OTA_BATCH_PROGRESS.set(in_progress)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to update OTA_BATCH_PROGRESS metric: %s", exc)
 
     return {"marked_inactive": count}
 
 
 @shared_task(
     bind=True,
-    name="devices.cleanup_device_logs",
     max_retries=3,
     autoretry_for=(OperationalError,),
     retry_backoff=True,
@@ -753,10 +750,7 @@ def cleanup_device_logs(self, retention_days: int = 90, chunk_size: int = 2000):
 
     while True:
         # Get PKs for a chunk to avoid long-running DELETE with subquery
-        ids = list(
-            DeviceLog.objects.filter(created_at__lt=cutoff)
-            .values_list("id", flat=True)[:chunk_size]
-        )
+        ids = list(DeviceLog.objects.filter(created_at__lt=cutoff).values_list("id", flat=True)[:chunk_size])
         if not ids:
             break
         deleted, _ = DeviceLog.objects.filter(id__in=ids).delete()
@@ -784,6 +778,7 @@ def notify_panic_alert(self, device_id: str, alert_type: str = "panic") -> dict:
     Silently skips if not configured.
     """
     import os
+
     import requests as http_requests
 
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -793,7 +788,10 @@ def notify_panic_alert(self, device_id: str, alert_type: str = "panic") -> dict:
         logger.debug("Telegram not configured, skipping panic notification")
         return {"status": "skipped", "reason": "not_configured"}
 
-    text = f"🚨 *PANIC ALERT*\nDevice: `{device_id}`\nType: {alert_type}\nTime: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    text = (
+        f"🚨 *PANIC ALERT*\nDevice: `{device_id}`\nType: {alert_type}\n"
+        f"Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     try:
         resp = http_requests.post(
@@ -826,6 +824,7 @@ def sync_ical_schedules(self) -> dict:
     we fetch that URL and update the template's times.
     """
     import re
+
     from apps.devices.models.schedule_template import ScheduleTemplate
     from apps.devices.services.ical_parser import parse_ical_to_times
 
@@ -842,9 +841,10 @@ def sync_ical_schedules(self) -> dict:
 
         # SSRF protection: validate + fetch with no redirects
         from apps.devices.services.url_validator import safe_fetch
+
         content, error = safe_fetch(url, timeout=10, max_bytes=1024 * 1024)
-        if error:
-            logger.warning(f"Skipping iCal URL for template {template.name}: {error}")
+        if error or content is None:
+            logger.warning(f"Skipping iCal URL for template {template.name}: {error or 'empty content'}")
             continue
 
         try:
@@ -875,6 +875,7 @@ def sync_holidays_to_devices(self) -> dict:
     Runs at 00:00 — sends the full holiday list so ESP32 can skip bells on holidays.
     """
     import time as _time
+
     from apps.devices.models import Device
     from apps.devices.models.holiday import Holiday
     from apps.devices.models.holiday_range import HolidayRange
@@ -885,24 +886,21 @@ def sync_holidays_to_devices(self) -> dict:
     dates_list = [{"month": h.date.month, "day": h.date.day} for h in holidays]
     today = timezone.now().date()
     today_holiday = any(
-        h.date == today or (h.recurring and h.date.month == today.month and h.date.day == today.day)
-        for h in holidays
+        h.date == today or (h.recurring and h.date.month == today.month and h.date.day == today.day) for h in holidays
     )
 
     # Build holiday ranges list
     ranges = HolidayRange.objects.filter(device__isnull=True)
     ranges_list = [
-        {"from_month": r.from_month, "from_day": r.from_day,
-         "to_month": r.to_month, "to_day": r.to_day}
-        for r in ranges
+        {"from_month": r.from_month, "from_day": r.from_day, "to_month": r.to_month, "to_day": r.to_day} for r in ranges
     ]
 
     # Use epoch timestamp as version — always increasing
     version = int(_time.time())
 
-    devices = Device.objects.filter(
-        status="active", registration_status="registered"
-    ).values_list("device_id", flat=True)
+    devices = Device.objects.filter(status="active", registration_status="registered").values_list(
+        "device_id", flat=True
+    )
 
     success = 0
     for device_id in devices:
@@ -932,11 +930,9 @@ def auto_clear_silence(self) -> dict:
     starts with normal bell operation regardless.
     """
     from apps.devices.models import Device
-    from apps.devices.services import mqtt_publisher
 
     device_ids = list(
-        Device.objects.filter(status="active", registration_status="registered")
-        .values_list("id", flat=True)
+        Device.objects.filter(status="active", registration_status="registered").values_list("id", flat=True)
     )
 
     if not device_ids:
@@ -949,7 +945,6 @@ def auto_clear_silence(self) -> dict:
 
 @shared_task(
     bind=True,
-    name="devices.cleanup_bell_logs",
     max_retries=3,
     autoretry_for=(OperationalError,),
     retry_backoff=True,
@@ -969,10 +964,7 @@ def cleanup_bell_logs(self, retention_days: int = 30, chunk_size: int = 2000):
     total_deleted = 0
 
     while True:
-        ids = list(
-            BellLog.objects.filter(rang_at__lt=cutoff)
-            .values_list("id", flat=True)[:chunk_size]
-        )
+        ids = list(BellLog.objects.filter(rang_at__lt=cutoff).values_list("id", flat=True)[:chunk_size])
         if not ids:
             break
         deleted, _ = BellLog.objects.filter(id__in=ids).delete()
@@ -985,7 +977,6 @@ def cleanup_bell_logs(self, retention_days: int = 30, chunk_size: int = 2000):
 
 @shared_task(
     bind=True,
-    name="devices.check_command_timeouts",
     max_retries=2,
     autoretry_for=(OperationalError,),
     retry_backoff=True,
@@ -1001,9 +992,7 @@ def check_command_timeouts(self) -> dict:
     from apps.devices.models.command_log import CommandLog
 
     cutoff = timezone.now() - timedelta(seconds=30)
-    count = CommandLog.objects.filter(
-        status="sent", sent_at__lt=cutoff
-    ).update(status="timeout")
+    count = CommandLog.objects.filter(status="sent", sent_at__lt=cutoff).update(status="timeout")
 
     if count:
         logger.info(f"Marked {count} commands as timeout")

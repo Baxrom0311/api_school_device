@@ -1,13 +1,14 @@
 """Tests for stale device offline alerts and cleanup_bell_logs task."""
-import pytest
+
 from datetime import timedelta
 from unittest.mock import patch
+
+import pytest
 from django.utils import timezone
 
-from apps.devices.models import Device
-from apps.devices.models.device_alert import DeviceAlert
 from apps.devices.models.bell_log import BellLog
-from apps.devices.tasks import detect_stale_devices, cleanup_bell_logs, auto_clear_silence
+from apps.devices.models.device_alert import DeviceAlert
+from apps.devices.tasks import auto_clear_silence, cleanup_bell_logs, detect_stale_devices
 
 
 @pytest.mark.django_db
@@ -57,9 +58,13 @@ class TestCleanupBellLogs:
     def test_deletes_old_bell_logs(self, device):
         now = timezone.now()
         # Old log (40 days ago)
-        BellLog.objects.create(device=device, rang_at=now - timedelta(days=40), duration_ms=3000, trigger_source="schedule")
+        BellLog.objects.create(
+            device=device, rang_at=now - timedelta(days=40), duration_ms=3000, trigger_source="schedule"
+        )
         # Recent log (5 days ago)
-        BellLog.objects.create(device=device, rang_at=now - timedelta(days=5), duration_ms=3000, trigger_source="manual")
+        BellLog.objects.create(
+            device=device, rang_at=now - timedelta(days=5), duration_ms=3000, trigger_source="manual"
+        )
 
         result = cleanup_bell_logs(retention_days=30)
 
@@ -69,7 +74,9 @@ class TestCleanupBellLogs:
 
     def test_no_deletion_when_all_recent(self, device):
         now = timezone.now()
-        BellLog.objects.create(device=device, rang_at=now - timedelta(days=5), duration_ms=3000, trigger_source="schedule")
+        BellLog.objects.create(
+            device=device, rang_at=now - timedelta(days=5), duration_ms=3000, trigger_source="schedule"
+        )
 
         result = cleanup_bell_logs(retention_days=30)
 
@@ -90,9 +97,7 @@ class TestAutoClearSilence:
         result = auto_clear_silence()
 
         assert result["cleared"] >= 1
-        mock_broadcast.assert_called_once_with(
-            [device.id], {"command": "silent", "state": False}
-        )
+        mock_broadcast.assert_called_once_with([device.id], {"command": "silent", "state": False})
 
     @patch("apps.devices.tasks.broadcast_emergency_command.delay")
     def test_skips_inactive_devices(self, mock_broadcast, device):

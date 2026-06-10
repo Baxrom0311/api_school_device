@@ -1,24 +1,25 @@
 """Admin-only device API URLs (SuperAdmin)"""
-from django.urls import path, include
+
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from apps.devices.api.v1.views.admin_device import AdminDeviceViewSet
 from apps.devices.api.v1.views import (
-    ScheduleViewSet,
+    DeviceLogViewSet,
     FirmwareVersionViewSet,
     OTABatchViewSet,
-    DeviceLogViewSet,
+    ScheduleViewSet,
 )
-from apps.devices.api.v1.views.holiday import HolidayViewSet
+from apps.devices.api.v1.views.admin_device import AdminDeviceViewSet
 from apps.devices.api.v1.views.bell_log import BellLogViewSet
-from apps.devices.api.v1.views.schedule_template import ScheduleTemplateViewSet
 from apps.devices.api.v1.views.emergency import (
     EmergencyAlertListView,
-    EmergencyRingAllView,
-    EmergencyLockdownView,
     EmergencyCancelView,
+    EmergencyLockdownView,
+    EmergencyRingAllView,
 )
-from apps.devices.api.v1.views.mqtt_auth import MQTTAuthView, MQTTACLView
+from apps.devices.api.v1.views.holiday import HolidayViewSet
+from apps.devices.api.v1.views.mqtt_auth import MQTTACLView, MQTTAuthView
+from apps.devices.api.v1.views.schedule_template import ScheduleTemplateViewSet
 
 router = DefaultRouter()
 router.register("devices", AdminDeviceViewSet, basename="admin-device")

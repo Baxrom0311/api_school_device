@@ -39,7 +39,7 @@ class User(AbstractUser, AbstractBaseModel):
         default=RoleChoices.USER,
         verbose_name=_("Role"),
     )
-    
+
     # Registration & Verification fields
     organization_name = models.CharField(
         max_length=255,
@@ -99,34 +99,35 @@ class User(AbstractUser, AbstractBaseModel):
         return {
             "access": str(refresh.access_token),  # type:ignore
             "refresh": str(refresh),
-            "user": self.id,
+            "user": str(self.id),
         }
 
     def generate_verification_token(self) -> str:
         """Generate a new email verification token"""
         import secrets
-        from django.utils import timezone
         from datetime import timedelta
-        
+
+        from django.utils import timezone
+
         self.verification_token = secrets.token_urlsafe(32)
         self.verification_token_expires = timezone.now() + timedelta(hours=24)
-        self.save(update_fields=['verification_token', 'verification_token_expires'])
+        self.save(update_fields=["verification_token", "verification_token_expires"])
         return self.verification_token
 
     def verify_email(self, token: str) -> bool:
         """Verify email with token"""
         from django.utils import timezone
-        
+
         if not self.verification_token or self.verification_token != token:
             return False
-        
+
         if self.verification_token_expires and self.verification_token_expires < timezone.now():
             return False
-        
+
         self.is_verified = True
         self.verification_token = None
         self.verification_token_expires = None
-        self.save(update_fields=['is_verified', 'verification_token', 'verification_token_expires'])
+        self.save(update_fields=["is_verified", "verification_token", "verification_token_expires"])
         return True
 
     def resend_verification_token(self) -> str:

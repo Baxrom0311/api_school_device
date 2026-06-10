@@ -7,10 +7,11 @@ Verifies:
 - Regular users can access /member/ endpoints
 - Unauthenticated users cannot access protected endpoints
 """
+
 import pytest
 from rest_framework.test import APIClient
+
 from apps.devices.models import Device
-from apps.devices.models.device import RegistrationStatus
 
 
 @pytest.mark.django_db
@@ -60,17 +61,23 @@ class TestAdminPermissions:
 
     def test_admin_auto_register_requires_admin(self, api_client):
         """SECURITY: /admin/ path must NOT expose AllowAny endpoints."""
-        response = api_client.post("/api/v1/admin/devices/auto-register/", {
-            "device_id": "AA:BB:CC:DD:EE:01",
-            "firmware_version": "1.0.0",
-        })
+        response = api_client.post(
+            "/api/v1/admin/devices/auto-register/",
+            {
+                "device_id": "AA:BB:CC:DD:EE:01",
+                "firmware_version": "1.0.0",
+            },
+        )
         assert response.status_code == 401
 
     def test_admin_activate_requires_admin(self, user_client):
         """SECURITY: /admin/ activate must require admin."""
-        response = user_client.post("/api/v1/admin/devices/activate/", {
-            "api_key": "sk_test",
-        })
+        response = user_client.post(
+            "/api/v1/admin/devices/activate/",
+            {
+                "api_key": "sk_test",
+            },
+        )
         assert response.status_code == 403
 
 
@@ -104,22 +111,31 @@ class TestDeviceEndpointPermissions:
     """ESP32 device endpoints are public (API key auth in body)."""
 
     def test_auto_register_is_public(self, api_client):
-        response = api_client.post("/api/v1/device/auto-register/", {
-            "device_id": "AA:BB:CC:DD:EE:01",
-            "firmware_version": "1.0.0",
-        })
+        response = api_client.post(
+            "/api/v1/device/auto-register/",
+            {
+                "device_id": "AA:BB:CC:DD:EE:01",
+                "firmware_version": "1.0.0",
+            },
+        )
         assert response.status_code in [200, 201]
 
     def test_activate_requires_valid_api_key(self, api_client):
-        response = api_client.post("/api/v1/device/activate/", {
-            "api_key": "invalid_key",
-        })
+        response = api_client.post(
+            "/api/v1/device/activate/",
+            {
+                "api_key": "invalid_key",
+            },
+        )
         assert response.status_code == 401
 
     def test_credentials_requires_valid_api_key(self, api_client):
-        response = api_client.post("/api/v1/device/credentials/", {
-            "api_key": "invalid_key",
-        })
+        response = api_client.post(
+            "/api/v1/device/credentials/",
+            {
+                "api_key": "invalid_key",
+            },
+        )
         assert response.status_code == 401
 
 
@@ -129,14 +145,19 @@ class TestScheduleRolePermissions:
 
     def test_regular_user_cannot_create_schedule(self, user_client, user_device):
         """USER role can't create/update schedules (write requires SCHOOL_ADMIN+)."""
-        response = user_client.post("/api/v1/schedules/", {
-            "device": str(user_device.id),
-            "times": ["08:00", "08:45"],
-        }, format="json")
+        response = user_client.post(
+            "/api/v1/schedules/",
+            {
+                "device": str(user_device.id),
+                "times": ["08:00", "08:45"],
+            },
+            format="json",
+        )
         assert response.status_code == 403
 
     def test_school_admin_can_update_schedule(self, school_admin_user):
-        from apps.devices.models import Device, Schedule
+        from apps.devices.models import Schedule
+
         client = APIClient()
         client.force_authenticate(user=school_admin_user)
         device = Device.objects.create(
@@ -146,9 +167,13 @@ class TestScheduleRolePermissions:
             owner=school_admin_user,
         )
         schedule = Schedule.objects.get(device=device)
-        response = client.patch(f"/api/v1/schedules/{schedule.id}/", {
-            "times": ["08:00", "08:45"],
-        }, format="json")
+        response = client.patch(
+            f"/api/v1/schedules/{schedule.id}/",
+            {
+                "times": ["08:00", "08:45"],
+            },
+            format="json",
+        )
         assert response.status_code == 200
 
     def test_regular_user_can_list_schedules(self, user_client):

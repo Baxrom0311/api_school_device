@@ -1,8 +1,8 @@
 """Tests for SSRF-hardened URL validator."""
-import pytest
-from unittest.mock import patch, MagicMock
 
-from apps.devices.services.url_validator import validate_ical_url, _is_ip_blocked, safe_fetch
+from unittest.mock import MagicMock, patch
+
+from apps.devices.services.url_validator import _is_ip_blocked, safe_fetch, validate_ical_url
 
 
 class TestIsIpBlocked:

@@ -2,7 +2,6 @@ from rest_framework import serializers
 
 from apps.devices.models.device_alert import DeviceAlert
 
-
 ALERT_MESSAGES = {
     "panic": "🚨 Panic tugmasi bosildi",
     "lockdown": "🔒 Lockdown rejimi yoqildi",

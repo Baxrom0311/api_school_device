@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from apps.devices.models import Device, FirmwareVersion, OTABatch, OTABatchDevice
 from apps.devices.models.device import RegistrationStatus
@@ -59,11 +60,15 @@ class TestOTABatchCRUD:
 
     def test_create_batch(self, admin_client, firmware, devices_for_ota):
         d1, d2 = devices_for_ota
-        response = admin_client.post("/api/v1/ota-batches/", {
-            "name": "New Batch",
-            "firmware_id": str(firmware.id),
-            "device_ids": [str(d1.id), str(d2.id)],
-        }, format="json")
+        response = admin_client.post(
+            "/api/v1/ota-batches/",
+            {
+                "name": "New Batch",
+                "firmware_id": str(firmware.id),
+                "device_ids": [str(d1.id), str(d2.id)],
+            },
+            format="json",
+        )
         assert response.status_code == 201
         assert response.data["name"] == "New Batch"
         assert response.data["total_devices"] == 2
@@ -170,16 +175,18 @@ class TestConcurrentOTAPrevention:
     def test_rejects_devices_with_active_ota(self, admin_client, firmware, devices_for_ota, ota_batch):
         d1, d2 = devices_for_ota
         # Create an active OTA batch device entry
-        OTABatchDevice.objects.create(
-            batch=ota_batch, device=d1, status=OTADeviceStatus.PENDING
-        )
+        OTABatchDevice.objects.create(batch=ota_batch, device=d1, status=OTADeviceStatus.PENDING)
         ota_batch.status = OTABatchStatus.IN_PROGRESS
         ota_batch.save()
 
-        response = admin_client.post("/api/v1/devices/bulk_ota/", {
-            "device_ids": [d1.id],
-            "firmware_id": firmware.id,
-        }, format="json")
+        response = admin_client.post(
+            "/api/v1/devices/bulk_ota/",
+            {
+                "device_ids": [d1.id],
+                "firmware_id": firmware.id,
+            },
+            format="json",
+        )
 
         assert response.status_code == 409
         assert "active OTA" in response.data["detail"]
@@ -189,10 +196,14 @@ class TestConcurrentOTAPrevention:
         d1, d2 = devices_for_ota
         mock_task.return_value.id = "fake-task-id"
 
-        response = admin_client.post("/api/v1/devices/bulk_ota/", {
-            "device_ids": [d1.id, d2.id],
-            "firmware_id": firmware.id,
-        }, format="json")
+        response = admin_client.post(
+            "/api/v1/devices/bulk_ota/",
+            {
+                "device_ids": [d1.id, d2.id],
+                "firmware_id": firmware.id,
+            },
+            format="json",
+        )
 
         assert response.status_code == 202
         mock_task.assert_called_once()

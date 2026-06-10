@@ -1,5 +1,3 @@
-from django.conf import settings
-
 from apps.users.tasks import send_email_task
 
 

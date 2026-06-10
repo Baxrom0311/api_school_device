@@ -4,9 +4,10 @@ Request-ID middleware.
 Generates a UUID per request and attaches it to the response header
 and logging context for traceability.
 """
-import uuid
+
 import logging
 import threading
+import uuid
 
 _local = threading.local()
 

@@ -2,8 +2,7 @@ import os
 
 _debug = os.getenv("DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 _default_backend = (
-    "django.core.mail.backends.console.EmailBackend" if _debug
-    else "django.core.mail.backends.smtp.EmailBackend"
+    "django.core.mail.backends.console.EmailBackend" if _debug else "django.core.mail.backends.smtp.EmailBackend"
 )
 
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", _default_backend)

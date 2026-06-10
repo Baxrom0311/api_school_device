@@ -1,13 +1,14 @@
 """Schedule Template + iCal import views."""
-from rest_framework import viewsets, status
+
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema_view, extend_schema
 
+from apps.devices.api.v1.serializers.schedule_template import ScheduleTemplateSerializer
 from apps.devices.models import Schedule
 from apps.devices.models.schedule_template import ScheduleTemplate
-from apps.devices.api.v1.serializers.schedule_template import ScheduleTemplateSerializer
 from apps.devices.services.ical_parser import parse_ical_to_times
 from apps.shared.permissions import IsSuperAdmin
 

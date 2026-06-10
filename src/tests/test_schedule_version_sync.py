@@ -1,8 +1,9 @@
 """Tests for schedule version-based sync on device heartbeat."""
+
 import json
-import pytest
 from unittest.mock import MagicMock, patch
-from django.utils import timezone
+
+import pytest
 
 from apps.devices.models import Device, Schedule
 
@@ -14,9 +15,7 @@ class TestScheduleVersionSync:
     def _make_heartbeat_msg(self, device_id, schedule_version, rssi=-50):
         msg = MagicMock()
         msg.topic = f"devices/{device_id}/status"
-        msg.payload = json.dumps(
-            {"rssi": rssi, "schedule_version": schedule_version}
-        ).encode()
+        msg.payload = json.dumps({"rssi": rssi, "schedule_version": schedule_version}).encode()
         return msg
 
     def test_pushes_schedule_when_device_version_outdated(self):

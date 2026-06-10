@@ -1,4 +1,5 @@
 """Celery tasks for user-related async operations (email sending)."""
+
 import logging
 
 from celery import shared_task
@@ -16,4 +17,4 @@ def send_email_task(self, subject: str, message: str, recipient: str) -> bool:
         return True
     except Exception as exc:
         logger.warning("Email send failed to %s: %s", recipient, exc)
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc

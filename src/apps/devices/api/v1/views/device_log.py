@@ -1,10 +1,10 @@
-from rest_framework import viewsets, mixins
-from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema_view, extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import mixins, viewsets
+from rest_framework.filters import OrderingFilter, SearchFilter
 
-from apps.devices.models.device_log import DeviceLog
 from apps.devices.api.v1.serializers.device_log import DeviceLogSerializer
+from apps.devices.models.device_log import DeviceLog
 from apps.shared.permissions import IsSuperAdmin
 
 

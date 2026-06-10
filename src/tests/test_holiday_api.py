@@ -1,12 +1,12 @@
 """Tests for Holiday CRUD API and today-silent action."""
-import pytest
-from datetime import date, timedelta
+
+from datetime import date
 from unittest.mock import patch
 
+import pytest
 from django.core.cache import cache
 from rest_framework import status
 
-from apps.devices.models import Device
 from apps.devices.models.holiday import Holiday
 
 
@@ -57,11 +57,14 @@ class TestHolidayCreate:
     url = "/api/v1/admin/holidays/"
 
     def test_create_holiday(self, admin_client):
-        resp = admin_client.post(self.url, {
-            "name": "Navro'z",
-            "date": "2026-03-21",
-            "recurring": True,
-        })
+        resp = admin_client.post(
+            self.url,
+            {
+                "name": "Navro'z",
+                "date": "2026-03-21",
+                "recurring": True,
+            },
+        )
         assert resp.status_code == status.HTTP_201_CREATED
         assert Holiday.objects.filter(name="Navro'z").exists()
 

@@ -1,22 +1,22 @@
 from apps.users.api.v1.views.auth import (
+    ChangePasswordView,
     LoginView,
     LogoutView,
-    RefreshTokenView,
     MeView,
+    RefreshTokenView,
     RegisterView,
-    VerifyEmailView,
     ResendVerificationView,
-    ChangePasswordView,
-)
-from apps.users.api.v1.views.users import (
-    AdminUserListView,
-    AdminUserDetailView,
-    AdminSetUserPasswordView,
-    AdminUserStatsView,
+    VerifyEmailView,
 )
 from apps.users.api.v1.views.forgot_password import (
     ForgotPasswordView,
     ResetPasswordView,
+)
+from apps.users.api.v1.views.users import (
+    AdminSetUserPasswordView,
+    AdminUserDetailView,
+    AdminUserListView,
+    AdminUserStatsView,
 )
 
 __all__ = [
